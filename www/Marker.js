@@ -126,12 +126,13 @@ Marker.prototype.remove = function(callback) {
     }, self.errorHandler, self.getPluginName(), 'remove', [this.getId()]);
 };
 
-Marker.prototype.getPosition = function() {
+Marker.prototype.getPosition = function(callback) {
     var position = this.get('position');
     if (!(position instanceof LatLng)) {
-      return new LatLng(position.lat, position.lng);
+      callback.call(self, new LatLng(position.lat, position.lng));
+      return;
     }
-    return position;
+    callback.call(self, position);
 };
 Marker.prototype.getId = function() {
     return this.id;
