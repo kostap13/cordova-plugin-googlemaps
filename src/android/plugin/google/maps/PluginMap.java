@@ -1432,7 +1432,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
 
 
-        } catch(Exception ex) {
+        } catch(Exception mException) {
           if (mException != null) {
             mException.printStackTrace();
            }
