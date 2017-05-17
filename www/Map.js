@@ -198,6 +198,11 @@ Map.prototype.setCameraZoom = function(zoom) {
     exec(null, this.errorHandler, this.id, 'setCameraZoom', [zoom]);
     return this;
 };
+Map.prototype.setZoom = function(zoom) {
+    this.set('camera_zoom', zoom);
+    exec(null, this.errorHandler, this.id, 'setCameraZoom', [zoom]);
+    return this;
+};
 Map.prototype.panBy = function(x, y) {
     x = parseInt(x, 10);
     y = parseInt(y, 10);
