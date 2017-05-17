@@ -56,7 +56,7 @@ var Polygon = function(map, polygonId, polygonOptions) {
     var _holes = common.createMvcArray(holesProperty.getArray());
 
     holesProperty.on('set_at', function(index) {
-      var value = common.getLatLng(pointsProperty.getAt(index));
+      var value = common.getLatLng(holesProperty.getAt(index));
       _holes.setAt(index,value);
     });
     holesProperty.on('remove_at', function(index) {
@@ -68,11 +68,11 @@ var Polygon = function(map, polygonId, polygonOptions) {
         array = common.createMvcArray(array);
       }
       array.on('insert_at', function(idx) {
-        var value = common.getLatLng(pointsProperty.getAt(index));
+        var value = common.getLatLng(array.getAt(idx));
         exec(null, self.errorHandler, self.getPluginName(), 'insertPointOfHoleAt', [polygonId, index, idx, value]);
       });
       array.on('set_at', function(idx) {
-        var value = common.getLatLng(pointsProperty.getAt(index));
+        var value = common.getLatLng(array.getAt(idx));
         exec(null, self.errorHandler, self.getPluginName(), 'setPointOfHoleAt', [polygonId, index, idx, value]);
       });
       array.on('remove_at', function(idx) {
@@ -161,17 +161,14 @@ Polygon.prototype.setHoles = function(holes) {
 
     holes = holes || [];
     if (holes.length > 0 && !utils.isArray(holes[0])) {
-      holes = [holes];
+        holes = [holes];
     }
     holes.forEach(function(hole) {
-      if (!utils.isArray(hole)) {
-        return [];
-      }
-      hole.forEach(function(latLng) {
-        mvcArray.push(common.getLatLng(latLng));
-      });
+        if (!utils.isArray(hole)) {
+            hole = [hole];
+        }
+        mvcArray.push(hole);
     });
-    //this.set('holes', holes);
     return this;
 };
 Polygon.prototype.getHoles = function() {

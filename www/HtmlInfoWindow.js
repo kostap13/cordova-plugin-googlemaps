@@ -3,9 +3,9 @@ var utils = require('cordova/utils'),
     BaseClass = require('./BaseClass');
 
 /*****************************************************************************
- * InfoWindow Class
+ * HTMLInfoWindow Class
  *****************************************************************************/
-var InfoWindow = function() {
+var HTMLInfoWindow = function() {
     var self = this;
     BaseClass.apply(self);
 
@@ -16,9 +16,9 @@ var InfoWindow = function() {
     frame.style.display = "inline-block";
     self.set("frame", frame);
 
-    var content = document.createElement("div");
-    content.style.display = "inline-block";
-    content.style.padding = "5px";
+    var contentBox = document.createElement("div");
+    contentBox.style.display = "inline-block";
+    contentBox.style.padding = "5px";
 
     var contentFrame = document.createElement("div");
     contentFrame.style.display = "block";
@@ -28,7 +28,7 @@ var InfoWindow = function() {
     contentFrame.style.left = "0px";
     contentFrame.style.right = "0px";
     frame.appendChild(contentFrame);
-    contentFrame.appendChild(content);
+    contentFrame.appendChild(contentBox);
 
     var tailFrame = document.createElement("div");
     tailFrame.style.position = "relative";
@@ -70,29 +70,27 @@ var InfoWindow = function() {
       var contentFrame = frame.firstChild;
       var contentBox = contentFrame.firstChild;
 
-      // Display the title property
-      // (ignore the snippet propert)
-      var title = marker.get("title");
-      if (typeof title === "string") {
+      var content = self.get("content");
+      if (typeof content === "string") {
           contentBox.style.whiteSpace="nowrap";
-          contentBox.innerHTML = title;
+          contentBox.innerHTML = content;
       } else {
-          contentBox.appendChild(title);
+          contentBox.appendChild(content);
       }
 
-      // Insert the contents to this infoWindow
+      // Insert the contents to this HTMLInfoWindow
       if (!frame.parentNode) {
           div.appendChild(frame);
       }
 
-      // Adjust the infoWindow size
-      var contentsWidth = contentBox.clientWidth;
+      // Adjust the HTMLInfoWindow size
+      var contentsWidth = contentBox.offsetWidth;
       self.set("contentsWidth", contentsWidth);
-      var contentsHeight = contentBox.clientHeight;
+      var contentsHeight = contentBox.offsetHeight;
       self.set("contentsHeight", contentsHeight );
       contentFrame.style.width = contentsWidth + "px";
       contentFrame.style.height = contentsHeight + "px";
-      frame.style.width = contentsWidth + "px";
+      frame.style.width = contentsWidth  + "px";
       frame.style.height = (contentsHeight+ 15) + "px";
 
       var infoOffset = {
@@ -159,9 +157,9 @@ var InfoWindow = function() {
 
 };
 
-utils.extend(InfoWindow, BaseClass);
+utils.extend(HTMLInfoWindow, BaseClass);
 
-InfoWindow.prototype.close = function(marker) {
+HTMLInfoWindow.prototype.close = function(marker) {
     if (!marker) {
         return;
     }
@@ -169,23 +167,29 @@ InfoWindow.prototype.close = function(marker) {
     map.off("infoPosition_changed");
     marker.off("icon_changed");
     marker.off("infoWindowAnchor_changed");
-    var map = marker.getMap();
+
     var div = map.getDiv();
     var frame = this.get("frame");
     div.removeChild(frame);
     this.set('marker', undefined);
 
-    // Remove the contents from this infoWindow
+    // Remove the contents from this HTMLInfoWindow
     var contentFrame = frame.firstChild;
-    var content = contentFrame.firstChild;
-    content.innerHTML = "";
+    var contentBox = contentFrame.firstChild;
+    contentBox.innerHTML = "";
 };
 
-InfoWindow.prototype.open = function(marker) {
+HTMLInfoWindow.prototype.setContent = function(content) {
+  this.set("content", content);
+};
+
+HTMLInfoWindow.prototype.open = function(marker) {
     if (!marker) {
         return;
     }
     var map = marker.getMap();
+    var self = this;
+
     map.bindTo("infoPosition", this);
     marker.bindTo("infoWindowAnchor", this);
     marker.bindTo("icon", this);
@@ -193,4 +197,10 @@ InfoWindow.prototype.open = function(marker) {
     this.trigger("infoWindowAnchor_changed");
 };
 
-module.exports = InfoWindow;
+HTMLInfoWindow.prototype.setBackgroundColor = function(backgroundColor) {
+  this.get("frame").children[0].style.backgroundColor = backgroundColor;
+  this.get("frame").children[1].children[0].style.borderColor = backgroundColor + " transparent transparent";
+  this.get("frame").children[1].children[1].style.borderColor = backgroundColor + " transparent transparent";
+};
+
+module.exports = HTMLInfoWindow;

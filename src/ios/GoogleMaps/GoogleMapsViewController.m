@@ -210,12 +210,12 @@
  */
 - (void) mapView:(GMSMapView *)mapView willMove:(BOOL)gesture
 {
-  // In order to pass the gesture parameter to the callbacks,
-  // use the _onMapEvent callback instead of the _onCameraEvent callback.
-	NSString* jsString = [NSString
-    stringWithFormat:@"javascript:cordova.fireDocumentEvent('%@', {evtName: '%@', callback: '_onMapEvent', args: [%@]});",
-    self.mapId, @"camera_move_start", gesture ? @"true": @"false"];
-  [self execJS:jsString];
+  self.isDragging = gesture;
+
+  if (self.isDragging) {
+    [self triggerMapEvent:@"map_drag_start"];
+  }
+  [self triggerCameraEvent:@"camera_move_start" position:self.map.camera];
 }
 
 
@@ -223,7 +223,11 @@
  * @callback plugin.google.maps.event.CAMERA_MOVE
  */
 - (void)mapView:(GMSMapView *)mapView didChangeCameraPosition:(GMSCameraPosition *)position {
-  [self triggerCameraEvent:@"camera_move" position:position];
+
+  if (self.isDragging) {
+    [self triggerMapEvent:@"map_drag"];
+  }
+  [self triggerCameraEvent:(@"camera_move") position:position];
 }
 
 /**
@@ -231,7 +235,11 @@
  */
 - (void) mapView:(GMSMapView *)mapView idleAtCameraPosition:(GMSCameraPosition *)position
 {
-  [self triggerCameraEvent:@"camera_move_end" position:position];
+  if (self.isDragging) {
+    [self triggerMapEvent:@"map_drag_end"];
+  }
+  [self triggerCameraEvent:(@"camera_move_end") position:position];
+  self.isDragging = NO;
 }
 
 
@@ -329,6 +337,18 @@
 */
 
 /**
+ * plugin.google.maps.event.MAP_***()) events
+ */
+- (void)triggerMapEvent: (NSString *)eventName
+{
+
+  NSString* jsString = [NSString
+                        stringWithFormat:@"javascript:cordova.fireDocumentEvent('%@', {evtName: '%@', callback: '_onMapEvent', args: []});",
+                        self.mapId, eventName];
+  [self execJS:jsString];
+}
+
+/**
  * plugin.google.maps.event.MAP_***(new google.maps.LatLng(lat,lng)) events
  */
 - (void)triggerMapEvent: (NSString *)eventName coordinate:(CLLocationCoordinate2D)coordinate
@@ -357,6 +377,18 @@
   [json setObject:[NSNumber numberWithInt:(int)position.hash] forKey:@"hashCode"];
   [json setObject:[NSNumber numberWithFloat:position.zoom] forKey:@"zoom"];
   
+    
+  GMSVisibleRegion visibleRegion = self.map.projection.visibleRegion;
+  GMSCoordinateBounds *bounds = [[GMSCoordinateBounds alloc] initWithRegion:visibleRegion];
+  NSMutableDictionary *northeast = [NSMutableDictionary dictionary];
+  [northeast setObject:[NSNumber numberWithFloat:bounds.northEast.latitude] forKey:@"lat"];
+  [northeast setObject:[NSNumber numberWithFloat:bounds.northEast.longitude] forKey:@"lng"];
+  [json setObject:northeast forKey:@"northeast"];
+  NSMutableDictionary *southwest = [NSMutableDictionary dictionary];
+  [southwest setObject:[NSNumber numberWithFloat:bounds.southWest.latitude] forKey:@"lat"];
+  [southwest setObject:[NSNumber numberWithFloat:bounds.southWest.longitude] forKey:@"lng"];
+  [json setObject:southwest forKey:@"southwest"];
+    
   
   NSData* jsonData = [NSJSONSerialization dataWithJSONObject:json options:0 error:nil];
   NSString* sourceArrayString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
@@ -416,10 +448,6 @@
   NSString *title = marker.title;
   NSString *snippet = marker.snippet;
   
-  if (title == nil) {
-    return NULL;
-  }
-  
   
   // Get the marker plugin
   NSString *pluginId = [NSString stringWithFormat:@"%@-marker", self.mapId];
@@ -435,6 +463,11 @@
     
     return [[UIView alloc]initWithFrame:CGRectMake(0, 0, 1, 1)];
   }
+
+  if (title == nil) {
+    return NULL;
+  }
+
   [self triggerMarkerEvent:@"info_open" marker:marker];
 
   // Load styles

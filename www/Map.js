@@ -110,6 +110,15 @@ Map.prototype.getMap = function(mapId, div, options) {
 
         div.style.overflow = "hidden";
         self.set("div", div);
+        
+        if (div.offsetWidth < 100 || div.offsetHeight < 100) {
+          // If the map Div is too small, wait a little.
+          var callee = arguments.callee;
+          setTimeout(function() {
+            callee.call(self, mapId, div, options);
+          }, 250 + Math.random() * 100);
+          return;
+        }
         var elements = [];
         var elemId, clickable, size;
 
@@ -130,7 +139,7 @@ Map.prototype.getMap = function(mapId, div, options) {
             // prevent multiple readding the class
             if (div.classList && !div.classList.contains('_gmaps_cdv_')) {
                 div.classList.add('_gmaps_cdv_');
-            } else if (div.className && div.className.indexOf('_gmaps_cdv_') != -1) {
+            } else if (div.className && div.className.indexOf('_gmaps_cdv_') === -1) {
                 div.className = div.className + ' _gmaps_cdv_';
             }
 
@@ -269,6 +278,60 @@ Map.prototype.setCameraBearing = function(bearing) {
     return this;
 };
 
+Map.prototype.moveCameraZoomIn = function(callback) {
+    var self = this;
+    var cameraPosition = self.get("camera");
+    cameraPosition.zoom++;
+    cameraPosition.zoom = cameraPosition.zoom < 0 ? 0 : cameraPosition.zoom;
+
+    exec(function() {
+        if (typeof callback === "function") {
+            callback.call(self);
+        }
+    }, self.errorHandler, self.id, 'moveCamera', [cameraPosition]);
+
+};
+Map.prototype.moveCameraZoomOut = function(callback) {
+    var self = this;
+    var cameraPosition = self.get("camera");
+    cameraPosition.zoom--;
+    cameraPosition.zoom = cameraPosition.zoom < 0 ? 0 : cameraPosition.zoom;
+
+    exec(function() {
+        if (typeof callback === "function") {
+            callback.call(self);
+        }
+    }, self.errorHandler, self.id, 'moveCamera', [cameraPosition]);
+
+};
+Map.prototype.animateCameraZoomIn = function(callback) {
+    var self = this;
+    var cameraPosition = self.get("camera");
+    cameraPosition.zoom++;
+    cameraPosition.zoom = cameraPosition.zoom < 0 ? 0 : cameraPosition.zoom;
+    cameraPosition.duration = 500;
+
+    exec(function() {
+        if (typeof callback === "function") {
+            callback.call(self);
+        }
+    }, self.errorHandler, self.id, 'animateCamera', [cameraPosition]);
+
+};
+Map.prototype.animateCameraZoomOut = function(callback) {
+    var self = this;
+    var cameraPosition = self.get("camera");
+    cameraPosition.zoom--;
+    cameraPosition.zoom = cameraPosition.zoom < 0 ? 0 : cameraPosition.zoom;
+    cameraPosition.duration = 500;
+
+    exec(function() {
+        if (typeof callback === "function") {
+            callback.call(self);
+        }
+    }, self.errorHandler, self.id, 'animateCamera', [cameraPosition]);
+
+};
 /**
  * @desc   Move the map camera with animation
  * @params {CameraPosition} cameraPosition New camera position
@@ -277,7 +340,7 @@ Map.prototype.setCameraBearing = function(bearing) {
 Map.prototype.animateCamera = function(cameraPosition, callback) {
     var self = this;
     var target = cameraPosition.target;
-    if (!target && position in cameraPosition) {
+    if (!target && "position" in cameraPosition) {
       target = cameraPosition.position;
     }
     if (!target) {
@@ -304,7 +367,7 @@ Map.prototype.animateCamera = function(cameraPosition, callback) {
 Map.prototype.moveCamera = function(cameraPosition, callback) {
     var self = this;
     var target = cameraPosition.target;
-    if (!target && position in cameraPosition) {
+    if (!target && "position" in cameraPosition) {
       target = cameraPosition.position;
     }
     if (!target) {
@@ -495,7 +558,7 @@ Map.prototype.setDiv = function(div) {
             // prevent multiple readding the class
             if (div.classList && !div.classList.contains('_gmaps_cdv_')) {
                 div.classList.add('_gmaps_cdv_');
-            } else if (div.className && div.className.indexOf('_gmaps_cdv_') != -1) {
+            } else if (div.className && div.className.indexOf('_gmaps_cdv_') === -1) {
                 div.className = div.className + ' _gmaps_cdv_';
             }
 
@@ -514,15 +577,15 @@ Map.prototype.setDiv = function(div) {
  */
 Map.prototype.getVisibleRegion = function(callback) {
     var self = this;
+    var northeast = self.get("camera_northeast");
+    var southwest = self.get("camera_southwest");
+    var latLngBounds = new LatLngBounds(northeast, southwest);
 
-    exec(function(result) {
-        if (typeof callback === "function") {
-            var latLngBounds = new LatLngBounds(result.latLngArray);
-            latLngBounds.northeast = new LatLng(result.northeast.lat, result.northeast.lng);
-            latLngBounds.southwest = new LatLng(result.southwest.lat, result.southwest.lng);
-            callback.call(self, latLngBounds);
-        }
-    }, self.errorHandler, self.id, 'getVisibleRegion', []);
+    if (typeof callback === "function") {
+      callback.call(self, latLngBounds);
+    }
+
+    return latLngBounds;
 };
 
 /**
@@ -702,6 +765,8 @@ Map.prototype.addTileOverlay = function(tilelayerOptions, callback) {
 Map.prototype.addPolygon = function(polygonOptions, callback) {
     var self = this;
     polygonOptions.points = polygonOptions.points || [];
+    var _orgs = polygonOptions.points;
+    polygonOptions.points = common.convertToPositionArray(polygonOptions.points);
     polygonOptions.holes = polygonOptions.holes || [];
     if (polygonOptions.holes.length > 0 && !Array.isArray(polygonOptions.holes[0])) {
         polygonOptions.holes = [polygonOptions.holes];
@@ -726,6 +791,7 @@ Map.prototype.addPolygon = function(polygonOptions, callback) {
 
     exec(function(result) {
         polygonOptions.hashCode = result.hashCode;
+        polygonOptions.points = _orgs;
         var polygon = new Polygon(self, result.id, polygonOptions);
         self.OVERLAYS[result.id] = polygon;
         polygon.one(result.id + "_remove", function() {
@@ -819,6 +885,7 @@ Map.prototype.addMarker = function(markerOptions, callback) {
     markerOptions.opacity = parseFloat("" + markerOptions.opacity, 10) || 1;
     markerOptions.disableAutoPan = markerOptions.disableAutoPan === true;
     markerOptions.useHtmlInfoWnd = !(markerOptions.infoWindow === undefined);
+    markerOptions.noCache = markerOptions.noCache === true; //experimental
 
     if ("styles" in markerOptions) {
         markerOptions.styles = typeof markerOptions.styles === "object" ? markerOptions.styles : {};
@@ -977,6 +1044,8 @@ Map.prototype._onCameraEvent = function(eventName, params) {
     this.set('camera_zoom', cameraPosition.zoom);
     this.set('camera_bearing', cameraPosition.bearing);
     this.set('camera_tilt', cameraPosition.viewAngle || cameraPosition.tilt);
+    this.set('camera_northeast', cameraPosition.northeast);
+    this.set('camera_southwest', cameraPosition.southwest);
     this.trigger(eventName, cameraPosition, this);
 };
 module.exports = Map;

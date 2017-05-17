@@ -13,7 +13,6 @@
 @interface PluginMap : CDVPlugin<MyPlgunProtocol>
 @property (nonatomic, strong) GoogleMapsViewController* mapCtrl;
 @property (nonatomic) BOOL isRemoved;
-@property (nonatomic) NSOperationQueue *loadPluginQueue;
 @property (nonatomic) NSOperationQueue *executeQueue;
 
 - (void)clear:(CDVInvokedUrlCommand*)command;
@@ -35,7 +34,6 @@
 - (void)setCompassEnabled:(CDVInvokedUrlCommand*)command;
 - (void)getCameraPosition:(CDVInvokedUrlCommand*)command;
 - (void)toDataURL:(CDVInvokedUrlCommand*)command;
-- (void)getVisibleRegion:(CDVInvokedUrlCommand*)command;
 - (void)setOptions:(CDVInvokedUrlCommand*)command;
 - (void)setAllGesturesEnabled:(CDVInvokedUrlCommand*)command;
 - (void)setPadding:(CDVInvokedUrlCommand*)command;

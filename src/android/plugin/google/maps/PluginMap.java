@@ -94,10 +94,11 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   public boolean isClickable = true;
   public final String TAG = mapId;
   public String mapDivId;
-  public final HashMap<String, PluginEntry> plugins = new HashMap<String, PluginEntry>();
+  public HashMap<String, PluginEntry> plugins = new HashMap<String, PluginEntry>();
   final int DEFAULT_CAMERA_PADDING = 20;
   private Projection projection = null;
   private Marker activeMarker = null;
+  private boolean isDragging = false;
 
 
   private enum TEXT_STYLE_ALIGNMENTS {
@@ -326,7 +327,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                           PluginMap.this.onCameraIdle();
                           map.setOnCameraIdleListener(PluginMap.this);
                           Handler handler = new Handler();
-                          handler.post(new AdjustInitCamera(params));
+                          handler.postDelayed(new AdjustInitCamera(params), 500);
                         }
                       });
                     }
@@ -340,7 +341,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                       PluginMap.this.onCameraIdle();
                       map.setOnCameraIdleListener(PluginMap.this);
                       Handler handler = new Handler();
-                      handler.post(new AdjustInitCamera(params));
+                      handler.postDelayed(new AdjustInitCamera(params), 500);
                     }
                   });
                 }
@@ -663,13 +664,38 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                   e.printStackTrace();
                 }
               }
+              String[] pluginNames = plugins.keySet().toArray(new String[plugins.size()]);
+              PluginEntry pluginEntry;
+              for (int i = 0; i < pluginNames.length; i++) {
+                pluginEntry = plugins.remove(pluginNames[i]);
+                if (pluginEntry == null) {
+                  continue;
+                }
+                ((MyPlugin)pluginEntry.plugin).map = null;
+                ((MyPlugin)pluginEntry.plugin).mapCtrl = null;
+                ((MyPlugin)pluginEntry.plugin).pluginMap = null;
+                pluginEntry.plugin.onDestroy();
+                pluginEntry = null;
+              }
               //Log.d("pluginMap", "--> mapView = " + mapView);
+              projection = null;
+              plugins = null;
               map = null;
               mapView = null;
+              _saveArgs = null;
+              _saveCallbackContext = null;
+              initCameraBounds = null;
+              activity = null;
+              mapId = null;
+              mapDivId = null;
+              activeMarker = null;
+
               System.gc();
+              Runtime.getRuntime().gc();
               if (callbackContext != null) {
                 sendNoResult(callbackContext);
               }
+              PluginMap.this.onDestroy();
             }
           });
         }
@@ -1588,21 +1614,6 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   @SuppressWarnings("unused")
   public void clear(JSONArray args, final CallbackContext callbackContext) throws JSONException {
 
-    this.activity.runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        boolean isSuccess = false;
-        while (!isSuccess) {
-          try {
-            map.clear();
-            isSuccess = true;
-          } catch (Exception e) {
-            //e.printStackTrace();
-            isSuccess = false;
-          }
-        }
-      }
-    });
 
     cordova.getThreadPool().submit(new Runnable() {
       @Override
@@ -1619,9 +1630,26 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
             ((MyPlugin) pluginEntry.plugin).clear();
           }
         }
-        if (callbackContext != null) {
-          sendNoResult(callbackContext);
-        }
+
+        activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            boolean isSuccess = false;
+            while (!isSuccess) {
+              try {
+                map.clear();
+                isSuccess = true;
+              } catch (Exception e) {
+                //e.printStackTrace();
+                isSuccess = false;
+              }
+            }
+            if (callbackContext != null) {
+              sendNoResult(callbackContext);
+            }
+          }
+        });
+
       }
     });
   }
@@ -1873,44 +1901,6 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     });
   }
 
-  /**
-   * Return the visible region of the map
-   */
-  public void getVisibleRegion(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    this.activity.runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        final VisibleRegion visibleRegion = projection.getVisibleRegion();
-        cordova.getThreadPool().submit(new Runnable() {
-          @Override
-          public void run() {
-            try {
-              LatLngBounds latLngBounds = visibleRegion.latLngBounds;
-              JSONObject result = new JSONObject();
-              JSONObject northeast = new JSONObject();
-              JSONObject southwest = new JSONObject();
-              northeast.put("lat", latLngBounds.northeast.latitude);
-              northeast.put("lng", latLngBounds.northeast.longitude);
-              southwest.put("lat", latLngBounds.southwest.latitude);
-              southwest.put("lng", latLngBounds.southwest.longitude);
-              result.put("northeast", northeast);
-              result.put("southwest", southwest);
-
-              JSONArray latLngArray = new JSONArray();
-              latLngArray.put(northeast);
-              latLngArray.put(southwest);
-              result.put("latLngArray", latLngArray);
-
-              callbackContext.success(result);
-            } catch (JSONException e) {
-              e.printStackTrace();
-              callbackContext.error(e.getMessage() + "");
-            }
-          }
-        });
-      }
-    });
-  }
 
 
   /**
@@ -2078,6 +2068,15 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     this.onOverlayEvent("groundoverlay_click", overlayId, point);
   }
 
+  /**
+   * Notify map event to JS
+   * @param eventName
+   */
+  public void onMapEvent(final String eventName) {
+    String js = String.format(Locale.ENGLISH, "javascript:cordova.fireDocumentEvent('%s', {evtName: '%s', callback:'_onMapEvent', args:[]})",
+            mapId, eventName);
+    jsCallback(js);
+  }
 
   /**
    * Notify map event to JS
@@ -2265,6 +2264,18 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
           target.put("lat", position.target.latitude);
           target.put("lng", position.target.longitude);
           params.put("target", target);
+
+          LatLngBounds latLngBounds = projection.getVisibleRegion().latLngBounds;
+          JSONObject result = new JSONObject();
+          JSONObject northeast = new JSONObject();
+          JSONObject southwest = new JSONObject();
+          northeast.put("lat", latLngBounds.northeast.latitude);
+          northeast.put("lng", latLngBounds.northeast.longitude);
+          southwest.put("lat", latLngBounds.southwest.latitude);
+          southwest.put("lng", latLngBounds.southwest.longitude);
+          params.put("northeast", northeast);
+          params.put("southwest", southwest);
+
           jsonStr = params.toString();
         } catch (JSONException e) {
           e.printStackTrace();
@@ -2286,18 +2297,29 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   @Override
   public void onCameraIdle() {
     projection = map.getProjection();
+    if (this.isDragging) {
+      onMapEvent("map_drag_end");
+    }
+    this.isDragging = false;
     onCameraEvent("camera_move_end");
   }
 
   @Override
   public void onCameraMoveCanceled() {
     projection = map.getProjection();
-    onCameraEvent("camera_moving");
+    if (this.isDragging) {
+      onMapEvent("map_drag_end");
+    }
+    this.isDragging = false;
+    onCameraEvent("camera_move_end");
   }
 
   @Override
   public void onCameraMove() {
     projection = map.getProjection();
+    if (this.isDragging) {
+      onMapEvent("map_drag");
+    }
     onCameraEvent("camera_move");
   }
 
@@ -2307,12 +2329,13 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
     // In order to pass the gesture parameter to the callbacks,
     // use the _onMapEvent callback instead of the _onCameraEvent callback.
-    boolean gesture = reason == REASON_GESTURE;
-    jsCallback(
-      String.format(
-        Locale.ENGLISH,
-        "javascript:cordova.fireDocumentEvent('%s', {evtName:'%s', callback:'_onMapEvent', args: [%s]})",
-        mapId, "camera_move_start", gesture ? "true": "false"));
+    this.isDragging = reason == REASON_GESTURE;
+
+    if (this.isDragging) {
+      onMapEvent("map_drag_start");
+    }
+    onCameraEvent("camera_move_start");
+
 
   }
 

@@ -23,8 +23,12 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Set;
 
 public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  {
+
+  private ArrayList<AsyncTask> imageLoadingTasks = new ArrayList<AsyncTask>();
 
   private String userAgent = "Mozilla";
   @Override
@@ -34,7 +38,7 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
 
   /**
    * Create ground overlay
-   * 
+   *
    * @param args
    * @param callbackContext
    * @throws JSONException
@@ -43,7 +47,7 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
     JSONObject opts = args.getJSONObject(1);
     _createGroundOverlay(opts, callbackContext);
   }
-  
+
   public void _createGroundOverlay(final JSONObject opts, final CallbackContext callbackContext) throws JSONException {
     final GroundOverlayOptions options = new GroundOverlayOptions();
     final JSONObject properties = new JSONObject();
@@ -119,13 +123,13 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
 
     });
   }
-  
+
 
   /**
    * Remove this tile layer
    * @param args
    * @param callbackContext
-   * @throws JSONException 
+   * @throws JSONException
    */
   public void remove(JSONArray args, final CallbackContext callbackContext) throws JSONException {
     final String id = args.getString(0);
@@ -154,21 +158,21 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
    * Set image of the ground-overlay
    * @param args
    * @param callbackContext
-   * @throws JSONException 
+   * @throws JSONException
    */
   public void setImage(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
     String id = args.getString(0);
     GroundOverlay groundOverlay = (GroundOverlay)self.objects.get(id);
     String url = args.getString(1);
-    
+
     String propertyId = "groundoverlay_initOpts_" + groundOverlay.getId();
     JSONObject opts = (JSONObject) self.objects.get(propertyId);
     opts.put("url", url);
     self.objects.put(propertyId, opts);
-    
+
     _createGroundOverlay(opts, callbackContext);
   }
-  
+
 
   /**
    * Set bounds
@@ -205,7 +209,7 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
    * Set opacity
    * @param args
    * @param callbackContext
-   * @throws JSONException 
+   * @throws JSONException
    */
   public void setOpacity(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
     float opacity = (float)args.getDouble(1);
@@ -222,7 +226,7 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
    * Set bearing
    * @param args
    * @param callbackContext
-   * @throws JSONException 
+   * @throws JSONException
    */
   public void setBearing(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
     float bearing = (float)args.getDouble(1);
@@ -431,6 +435,7 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
         }
       };
       task.execute();
+      imageLoadingTasks.add(task);
 
 
       return;
@@ -475,6 +480,32 @@ public class PluginGroundOverlay extends MyPlugin implements MyPluginInterface  
 
       });
       task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, imageUrl);
+      imageLoadingTasks.add(task);
     }
   }
+
+
+  @Override
+  public void onDestroy() {
+    super.onDestroy();
+
+    //--------------------------------------
+    // Cancel tasks
+    //--------------------------------------
+    cordova.getThreadPool().submit(new Runnable() {
+      @Override
+      public void run() {
+        AsyncTask task;
+        int i, ilen=imageLoadingTasks.size();
+        for (i = 0; i < ilen; i++) {
+          task = imageLoadingTasks.remove(i);
+          task.cancel(true);
+          task = null;
+        }
+        imageLoadingTasks = null;
+      }
+    });
+
+  }
+
 }
