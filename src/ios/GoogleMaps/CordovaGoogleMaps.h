@@ -1,8 +1,8 @@
 //
-//  GoogleMaps.h
-//  SimpleMap
+//  CordovaGoogleMaps.h
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 10/31/13.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -24,6 +24,9 @@
 
 - (void)getMap:(CDVInvokedUrlCommand*)command;
 - (void)getMyLocation:(CDVInvokedUrlCommand*)command;
+- (void)clearHtmlElements:(CDVInvokedUrlCommand *)command;
 - (void)putHtmlElements:(CDVInvokedUrlCommand *)command;
 - (void)removeMap:(CDVInvokedUrlCommand *)command;
+- (void)pause:(CDVInvokedUrlCommand *)command;
+- (void)resume:(CDVInvokedUrlCommand *)command;
 @end

@@ -1,8 +1,8 @@
 //
-//  Marker.m
-//  SimpleMap
+//  PluginMarker.m
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 11/8/13.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -45,13 +45,13 @@
       [self.objects removeObjectForKey:key];
   }
   self.objects = nil;
-  
+
   [self.imgCache removeAllObjects];
   self.imgCache = nil;
   key = nil;
   keys = nil;
-  
-  
+
+
   NSString *pluginId = [NSString stringWithFormat:@"%@-marker", self.mapCtrl.mapId];
   CDVViewController *cdvViewController = (CDVViewController*)self.viewController;
   [cdvViewController.pluginObjects removeObjectForKey:pluginId];
@@ -78,7 +78,7 @@
     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
         NSMutableDictionary *iconProperty = nil;
         NSString *animation = nil;
-        
+
         // Create a marker
         GMSMarker *marker = [GMSMarker markerWithPosition:position];
         marker.tracksViewChanges = NO;
@@ -110,7 +110,7 @@
 
         NSString *markerId = [NSString stringWithFormat:@"marker_%lu", (unsigned long)marker.hash];
         [self.objects setObject:marker forKey: markerId];
-      
+
         [result setObject:markerId forKey:@"id"];
         [result setObject:[NSString stringWithFormat:@"%lu", (unsigned long)marker.hash] forKey:@"hashCode"];
 
@@ -128,12 +128,7 @@
             disableAutoPan = [[json valueForKey:@"disableAutoPan"] boolValue];
         }
         [properties setObject:[NSNumber numberWithBool:disableAutoPan] forKey:@"disableAutoPan"];
-        
-        BOOL useHtmlInfoWnd = NO;
-        if ([json valueForKey:@"useHtmlInfoWnd"] != nil) {
-            useHtmlInfoWnd = [[json valueForKey:@"useHtmlInfoWnd"] boolValue];
-        }
-        [properties setObject:[NSNumber numberWithBool:useHtmlInfoWnd] forKey:@"useHtmlInfoWnd"];
+
         [self.objects setObject:properties forKey: propertyId];
 
         // Create icon
@@ -203,6 +198,7 @@
       GMSMarker *marker = [self.objects objectForKey:hashCode];
       if (marker) {
           self.mapCtrl.map.selectedMarker = marker;
+          self.mapCtrl.activeMarker = marker;
       }
 
       CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
@@ -217,6 +213,7 @@
 {
   [[NSOperationQueue mainQueue] addOperationWithBlock:^{
       self.mapCtrl.map.selectedMarker = nil;
+      self.mapCtrl.activeMarker = nil;
       CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
       [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
   }];
@@ -258,9 +255,10 @@
       marker.title = [command.arguments objectAtIndex:1];
 
       CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
-      [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+      [(CDVCommandDelegateImpl *)self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
   }];
 }
+
 
 /**
  * Set title to the specified marker
@@ -278,6 +276,20 @@
   }];
 }
 
+- (void)setActiveMarkerId:(CDVInvokedUrlCommand*)command {
+
+  [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+
+      NSString *markerId = [command.arguments objectAtIndex:0];
+      GMSMarker *marker = [self.objects objectForKey:markerId];
+      if (marker == nil) {
+        return ;
+      }
+      self.mapCtrl.map.selectedMarker = marker;
+      self.mapCtrl.activeMarker = marker;
+  }];
+}
+
 /**
  * Remove the specified marker
  * @params markerId
@@ -292,7 +304,7 @@
       [self.objects removeObjectForKey:markerId];
       [self.objects removeObjectForKey:propertyId];
       marker = nil;
-    
+
       CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
       [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
   }];
@@ -439,7 +451,7 @@
       } else {
           marker.map = nil;
       }
-      
+
       NSString *propertyId = [NSString stringWithFormat:@"marker_property_%lu", (unsigned long)marker.hash];
       NSMutableDictionary *properties = [NSMutableDictionary dictionaryWithDictionary:
                                          [self.objects objectForKey:propertyId]];
@@ -514,7 +526,7 @@
           iconProperty = [[NSMutableDictionary alloc] init];
           [iconProperty setObject:[rgbColor parsePluginColor] forKey:@"iconColor"];
       }
-    
+
 
       CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
       [self setIcon_:marker iconProperty:iconProperty pluginResult:pluginResult callbackId:command.callbackId];
@@ -553,7 +565,7 @@
 }
 
 -(void)setMarkerAnimation_:(NSString *)animation marker:(GMSMarker *)marker pluginResult:(CDVPluginResult *)pluginResult callbackId:(NSString*)callbackId {
-  
+
     animation = [animation uppercaseString];
     SWITCH(animation) {
         CASE (@"DROP") {
@@ -702,6 +714,45 @@
 
         NSRange range = [iconPath rangeOfString:@"http"];
         if (range.location != 0) {
+
+            range = [iconPath rangeOfString:@"://"];
+            if (range.location == NSNotFound) {
+
+                range = [iconPath rangeOfString:@"/"];
+                if (range.location != 0) {
+                  // Get the current URL, then calculate the relative path.
+                  CDVViewController *cdvViewController = (CDVViewController*)self.viewController;
+
+                  id webview = cdvViewController.webView;
+                  NSString *clsName = [webview className];
+                  NSURL *url;
+                  if ([clsName isEqualToString:@"UIWebView"]) {
+                    url = ((UIWebView *)cdvViewController.webView).request.URL;
+                  } else {
+                    url = [webview URL];
+                  }
+                  NSString *currentURL = url.absoluteString;
+                  currentURL = [currentURL stringByDeletingLastPathComponent];
+
+                  range = [currentURL rangeOfString:@"http"];
+                  if (range.location != 0) {
+
+                    currentURL = [currentURL stringByReplacingOccurrencesOfString:@"file:" withString:@""];
+                    currentURL = [currentURL stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+                    iconPath = [NSString stringWithFormat:@"file://%@/%@", currentURL, iconPath];
+                  } else {
+                    iconPath = [NSString stringWithFormat:@"%@/%@", currentURL, iconPath];
+                  }
+                } else {
+                  iconPath = [NSString stringWithFormat:@"file://%@", iconPath];
+                }
+            }
+
+        }
+        //NSLog(@"iconPath = %@", iconPath);
+
+        range = [iconPath rangeOfString:@"http"];
+        if (range.location != 0) {
             /**
              * Load icon from file or Base64 encoded strings
              */
@@ -739,33 +790,6 @@
                         return;
                     }
                 }
-
-                range = [iconPath rangeOfString:@"://"];
-                if (range.location == NSNotFound) {
-
-                    range = [iconPath rangeOfString:@"/"];
-                    if (range.location != 0) {
-                      // Get the current URL, then calculate the relative path.
-                      CDVViewController *cdvViewController = (CDVViewController*)self.viewController;
-                      
-                      id webview = cdvViewController.webView;
-                      NSString *clsName = [webview className];
-                      NSURL *url;
-                      if ([clsName isEqualToString:@"UIWebView"]) {
-                        url = ((UIWebView *)cdvViewController.webView).request.URL;
-                      } else {
-                        url = [webview URL];
-                      }
-                      NSString *currentURL = url.absoluteString;
-                      currentURL = [currentURL stringByDeletingLastPathComponent];
-                      currentURL = [currentURL stringByReplacingOccurrencesOfString:@"file:" withString:@""];
-                      currentURL = [currentURL stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-                      iconPath = [NSString stringWithFormat:@"file://%@/%@", currentURL, iconPath];
-                    } else {
-                      iconPath = [NSString stringWithFormat:@"file://%@", iconPath];
-                    }
-                }
-
 
                 range = [iconPath rangeOfString:@"file://"];
                 if (range.location != NSNotFound) {
@@ -927,7 +951,7 @@
 - (void)downloadImageWithURL:(NSURL *)url completionBlock:(void (^)(BOOL succeeded, UIImage *image))completionBlock
 {
     [self.executeQueue addOperationWithBlock:^{
-  
+
         NSURLRequest *req = [NSURLRequest requestWithURL:url
                                           cachePolicy:NSURLRequestReturnCacheDataElseLoad
                                           timeoutInterval:5];
@@ -948,6 +972,28 @@
 
 
 
+    //-------------------------------------------------------------
+    // Use NSURLSessionDataTask instead of [NSURLConnection sendAsynchronousRequest]
+    // https://stackoverflow.com/a/20871647
+    //-------------------------------------------------------------
+    NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration defaultSessionConfiguration];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfiguration];
+    NSURLSessionDataTask *getTask = [session dataTaskWithRequest:req
+                             completionHandler:^(NSData *data, NSURLResponse *res, NSError *error) {
+                               if ( !error ) {
+                                 [self.imgCache setObject:data forKey:uniqueKey cost:data.length];
+                                 UIImage *image = [UIImage imageWithData:data];
+                                 completionBlock(YES, image);
+                               } else {
+                                 completionBlock(NO, nil);
+                               }
+
+                            }];
+    [getTask resume];
+    //-------------------------------------------------------------
+    // NSURLConnection sendAsynchronousRequest is deprecated.
+    //-------------------------------------------------------------
+/*
         [NSURLConnection sendAsynchronousRequest:req
               queue:self.executeQueue
               completionHandler:^(NSURLResponse *res, NSData *data, NSError *error) {
@@ -960,6 +1006,9 @@
                 }
 
         }];
+*/
+
+
     }];
 }
 @end

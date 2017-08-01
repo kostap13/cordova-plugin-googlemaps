@@ -18,10 +18,6 @@ var Marker = function(map, id, markerOptions) {
         value: map,
         writable: false
     });
-    Object.defineProperty(self, "hashCode", {
-        value: markerOptions.hashCode,
-        writable: false
-    });
     Object.defineProperty(self, "id", {
         value: id,
         writable: false
@@ -48,7 +44,12 @@ var Marker = function(map, id, markerOptions) {
     //-----------------------------------------------
     // Sets event listeners
     //-----------------------------------------------
-    this.on(event.INFO_OPEN, function() {
+
+    if (markerOptions.infoWindow) {
+      console.log("[deprecated] the infoWindow option is deprecated. Please use event listener.");
+    }
+
+    self.on(event.INFO_OPEN, function() {
         if (map.get("active_marker_id") === id) {
           return;
         }
@@ -58,12 +59,14 @@ var Marker = function(map, id, markerOptions) {
             markerOptions.infoWindow.open(self);
         }
     });
-    this.on(event.INFO_CLOSE, function() {
-        map.set('active_marker_id', undefined);
+    self.on(event.INFO_CLOSE, function() {
 
         if (markerOptions.infoWindow) {
             markerOptions.infoWindow.close(self);
         }
+    });
+    self.on(event.MARKER_CLICK, function() {
+        self.trigger(event.INFO_OPEN);
     });
 
 
@@ -95,7 +98,6 @@ var Marker = function(map, id, markerOptions) {
         exec(null, self.errorHandler, self.getPluginName(), 'setIconAnchor', [self.getId(), anchor[0], anchor[1]]);
     });
     self.on("infoWindowAnchor_changed", function(oldValue, anchor) {
-        console.log("infoWindowAnchor", anchor);
         exec(null, self.errorHandler, self.getPluginName(), 'setInfoWindowAnchor', [self.getId(), anchor[0], anchor[1]]);
     });
     self.on("zIndex_changed", function(oldValue, zIndex) {
@@ -118,6 +120,7 @@ Marker.prototype.getPluginName = function() {
 
 Marker.prototype.remove = function(callback) {
     var self = this;
+    self.trigger(event.INFO_CLOSE);     // close open infowindow, otherwise it will stay
     self.trigger(self.id + "_remove");
     exec(function() {
         if (typeof callback === "function") {
@@ -252,12 +255,17 @@ Marker.prototype.showInfoWindow = function() {
     return this;
 };
 Marker.prototype.hideInfoWindow = function() {
+    var map = this.getMap();
+    if (map) {
+      map.set('active_marker_id', undefined);
+    }
     exec(null, this.errorHandler, this.getPluginName(), 'hideInfoWindow', [this.getId()]);
     return this;
 };
 Marker.prototype.isInfoWindowShown = function() {
     var map = this.getMap();
-    return map && map.get('active_marker_id') === this.id;
+    return map && (map.get('active_marker_id') === this.id ||
+      this.get("infoWindow"));
 };
 Marker.prototype.isVisible = function() {
     return this.get("visible") === true;

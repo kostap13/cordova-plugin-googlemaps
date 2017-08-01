@@ -1,8 +1,8 @@
 //
 //  GoogleMapsViewController.h
-//  SimpleMap
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 11/6/13.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -25,6 +25,7 @@
 @property (nonatomic, strong) GMSMapView* map;
 @property (nonatomic) BOOL clickable;
 @property (nonatomic) BOOL isRenderedAtOnce;
+@property (nonatomic) GMSMarker* activeMarker;
 @property (nonatomic, readwrite, strong) NSString *mapDivId;
 
 

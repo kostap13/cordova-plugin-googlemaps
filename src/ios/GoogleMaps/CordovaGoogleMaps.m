@@ -1,8 +1,8 @@
 //
-//  GoogleMaps.m
-//  SimpleMap
+//  CordovaGoogleMaps.m
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 10/31/13.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -82,10 +82,10 @@
   self.pluginLayer.backgroundColor = [UIColor whiteColor];
 
   dispatch_async(dispatch_get_main_queue(), ^{
-    
+
       // Remove all url caches
       [[NSURLCache sharedURLCache] removeAllCachedResponses];
-    
+
       // Remove old plugins that are used in the previous html.
       NSString *mapId;
       NSArray *keys=[self.pluginMaps allKeys];
@@ -100,14 +100,14 @@
         self.pluginLayer.pluginScrollView.debugView.HTMLNodes = nil;
       }
       [self.pluginLayer.pluginScrollView.debugView.mapCtrls removeAllObjects];
-    
+
   });
 
 }
 -(void)pageDidLoad {
     self.webView.backgroundColor = [UIColor clearColor];
     self.webView.opaque = NO;
-  
+
 }
 
 - (void)_destroyMap:(NSString *)mapId {
@@ -122,7 +122,7 @@
     CDVViewController *cdvViewController = (CDVViewController*)self.viewController;
     [cdvViewController.pluginObjects setObject:pluginMap forKey:mapId];
     [cdvViewController.pluginsMap setValue:mapId forKey:mapId];
-  
+
     [self.pluginLayer removeMapView:pluginMap.mapCtrl];
 
     pluginMap.mapCtrl.view = nil;
@@ -140,7 +140,7 @@
 - (void)removeMap:(CDVInvokedUrlCommand *)command {
     NSString *mapId = [command.arguments objectAtIndex:0];
     [self _destroyMap:mapId];
-  
+
     if (command != nil) {
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -157,6 +157,7 @@
 
         CDVViewController *cdvViewController = (CDVViewController*)self.viewController;
         NSString *mapId = [command.arguments objectAtIndex:0];
+        NSDictionary *initOptions = [command.arguments objectAtIndex:1];
 
         // Wrapper view
         GoogleMapsViewController* mapCtrl = [[GoogleMapsViewController alloc] initWithOptions:nil];
@@ -164,6 +165,7 @@
         mapCtrl.isFullScreen = YES;
         mapCtrl.mapId = mapId;
         mapCtrl.mapDivId = nil;
+        [mapCtrl.view setHidden:YES];
 
         // Create an instance of the Map class everytime.
         PluginMap *pluginMap = [[PluginMap alloc] init];
@@ -199,13 +201,103 @@
 
 
         // Generate an instance of GMSMapView;
-        GMSCameraPosition *camera = [GMSCameraPosition cameraWithLatitude:0
-                                            longitude:0
-                                            zoom:0
-                                            bearing:0
-                                            viewingAngle:0];
+        GMSCameraPosition *camera = nil;
+        int bearing = 0;
+        double angle = 0, zoom = 0;
+        NSDictionary *latLng = nil;
+        double latitude = 0;
+        double longitude = 0;
+        GMSCoordinateBounds *cameraBounds = nil;
+        NSDictionary *cameraOptions = [initOptions valueForKey:@"camera"];
+        if (cameraOptions) {
+
+          if ([cameraOptions valueForKey:@"bearing"]) {
+            bearing = (int)[[cameraOptions valueForKey:@"bearing"] integerValue];
+          } else {
+            bearing = 0;
+          }
+
+          if ([cameraOptions valueForKey:@"tilt"]) {
+            angle = [[cameraOptions valueForKey:@"tilt"] doubleValue];
+          } else {
+            angle = 0;
+          }
+
+          if ([cameraOptions valueForKey:@"zoom"] && [cameraOptions valueForKey:@"zoom"] != [NSNull null]) {
+            zoom = [[cameraOptions valueForKey:@"zoom"] doubleValue];
+          } else {
+            zoom = 0;
+          }
+          if ([cameraOptions objectForKey:@"target"]) {
+            NSString *targetClsName = [[cameraOptions objectForKey:@"target"] className];
+            if ([targetClsName isEqualToString:@"__NSCFArray"] || [targetClsName isEqualToString:@"__NSArrayM"] ) {
+              //--------------------------------------------
+              //  cameraPosition.target = [
+              //    new plugin.google.maps.LatLng(),
+              //    ...
+              //    new plugin.google.maps.LatLng()
+              //  ]
+              //---------------------------------------------
+              int i = 0;
+              NSArray *latLngList = [cameraOptions objectForKey:@"target"];
+              GMSMutablePath *path = [GMSMutablePath path];
+              for (i = 0; i < [latLngList count]; i++) {
+                latLng = [latLngList objectAtIndex:i];
+                latitude = [[latLng valueForKey:@"lat"] doubleValue];
+                longitude = [[latLng valueForKey:@"lng"] doubleValue];
+                [path addLatitude:latitude longitude:longitude];
+              }
+
+              cameraBounds = [[GMSCoordinateBounds alloc] initWithPath:path];
+              //CLLocationCoordinate2D center = cameraBounds.center;
+
+              latitude = cameraBounds.center.latitude;
+              longitude = cameraBounds.center.longitude;
+            } else {
+              //------------------------------------------------------------------
+              //  cameraPosition.target = new plugin.google.maps.LatLng();
+              //------------------------------------------------------------------
+
+              latLng = [cameraOptions objectForKey:@"target"];
+              latitude = [[latLng valueForKey:@"lat"] floatValue];
+              longitude = [[latLng valueForKey:@"lng"] floatValue];
+
+            }
+          }
+          //[pluginMap.mapCtrl.view setHidden:YES];
+        }
+        camera = [GMSCameraPosition cameraWithLatitude:latitude
+                                          longitude:longitude
+                                          zoom: zoom
+                                          bearing: bearing
+                                          viewingAngle: angle];
 
         pluginMap.mapCtrl.map = [GMSMapView mapWithFrame:rect camera:camera];
+
+        //mapType
+        NSString *typeStr = [initOptions valueForKey:@"mapType"];
+        if (typeStr) {
+
+          NSDictionary *mapTypes = [NSDictionary dictionaryWithObjectsAndKeys:
+                                    ^() {return kGMSTypeHybrid; }, @"MAP_TYPE_HYBRID",
+                                    ^() {return kGMSTypeSatellite; }, @"MAP_TYPE_SATELLITE",
+                                    ^() {return kGMSTypeTerrain; }, @"MAP_TYPE_TERRAIN",
+                                    ^() {return kGMSTypeNormal; }, @"MAP_TYPE_NORMAL",
+                                    ^() {return kGMSTypeNone; }, @"MAP_TYPE_NONE",
+                                    nil];
+
+          typedef GMSMapViewType (^CaseBlock)();
+          GMSMapViewType mapType;
+          CaseBlock caseBlock = mapTypes[typeStr];
+          if (caseBlock) {
+            // Change the map type
+            mapType = caseBlock();
+
+            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+              pluginMap.mapCtrl.map.mapType = mapType;
+            }];
+          }
+        }
         pluginMap.mapCtrl.map.delegate = mapCtrl;
         pluginMap.mapCtrl.map.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
@@ -284,7 +376,7 @@
 
         //http://stackoverflow.com/questions/24268070/ignore-ios8-code-in-xcode-5-compilation
         [self.locationManager requestWhenInUseAuthorization];
-        
+
         [self.locationManager stopUpdatingLocation];
         [self.locationManager startUpdatingLocation];
         [self.locationCommandQueue addObject:command];
@@ -341,13 +433,40 @@
     }
 
 }
+- (void)clearHtmlElements:(CDVInvokedUrlCommand *)command {
+    [self.executeQueue addOperationWithBlock:^{
+        if (self.pluginLayer != nil) {
+          [self.pluginLayer clearHTMLElements];
+        }
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
+- (void)resume:(CDVInvokedUrlCommand *)command {
+    if (self.pluginLayer != nil) {
+      self.pluginLayer.isSuspended = false;
+    }
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+
+}
+- (void)pause:(CDVInvokedUrlCommand *)command {
+    if (self.pluginLayer != nil) {
+      self.pluginLayer.isSuspended = true;
+    }
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
 
 - (void)putHtmlElements:(CDVInvokedUrlCommand *)command {
     [self.executeQueue addOperationWithBlock:^{
-    
+
         NSDictionary *elements = [command.arguments objectAtIndex:0];
 
-        [self.pluginLayer putHTMLElements:elements];
+        if (self.pluginLayer != nil) {
+          [self.pluginLayer putHTMLElements:elements];
+        }
 /*
         if (self.pluginLayer.needUpdatePosition) {
             self.pluginLayer.needUpdatePosition = NO;

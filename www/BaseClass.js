@@ -1,138 +1,180 @@
+
+var _globalListeners = {};
+
+function globalEventListener(e) {
+  var eventName = e.type;
+  if (!_globalListeners[eventName]) {
+    return;
+  }
+
+  var hashCode = e.myself.hashCode;
+  if (!hashCode || !_globalListeners[eventName][hashCode]) {
+    return;
+  }
+  var callbacks = _globalListeners[eventName][hashCode];
+  for (var i = 0; i < callbacks.length; i++) {
+    callbacks[i].listener(e);
+  }
+}
+
 var BaseClass = function() {
-   var self = this;
-   var _vars = {};
-   var _listeners = {};
+  var self = this;
+  var _vars = {};
 
-   self.empty = function() {
-       for (var key in Object.keys(_vars)) {
-           _vars[key] = null;
-           delete _vars[key];
-       }
-   };
+  var hashCode = Math.floor(Date.now() * Math.random());
 
-   self.get = function(key) {
-       return key in _vars ? _vars[key] : null;
-   };
-   self.set = function(key, value, noNotify) {
-       var prev = _vars[key];
-       _vars[key] = value;
-       if (!noNotify && prev !== value) {
-           self.trigger(key + "_changed", prev, value);
-       }
-   };
-   self.bindTo = function(key, target, targetKey, noNotify) {
-       targetKey = targetKey === undefined || targetKey === null ? key : targetKey;
-       self.on(key + "_changed", function(prevValue, newValue) {
-           target.set(targetKey, newValue, noNotify === true);
-       });
-   };
+  Object.defineProperty(self, "hashCode", {
+      value: hashCode,
+      writable: false
+  });
+  self.empty = function() {
+    for (var key in Object.keys(_vars)) {
+      _vars[key] = null;
+      delete _vars[key];
+    }
+  };
 
-   self.trigger = function(eventName) {
-       if (!eventName) {
-         return;
-       }
-       var args = [];
-       for (var i = 1; i < arguments.length; i++) {
-           args.push(arguments[i]);
-       }
-       var event = document.createEvent('Event');
-       event.initEvent(eventName, false, false);
-       event.mydata = args;
-       event.myself = self;
-       document.dispatchEvent(event);
-   };
-   self.on = function(eventName, callback) {
-      if (!eventName || !callback || typeof callback !== "function") {
+  self.get = function(key) {
+    return key in _vars ? _vars[key] : null;
+  };
+  self.set = function(key, value, noNotify) {
+    var prev = _vars[key];
+    _vars[key] = value;
+    if (!noNotify && prev !== value) {
+      self.trigger(key + "_changed", prev, value);
+    }
+  };
+  self.bindTo = function(key, target, targetKey, noNotify) {
+    targetKey = targetKey === undefined || targetKey === null ? key : targetKey;
+    self.on(key + "_changed", function(prevValue, newValue) {
+      target.set(targetKey, newValue, noNotify === true);
+    });
+  };
+
+  self.trigger = function(eventName) {
+    if (!eventName || !_globalListeners[eventName] || !_globalListeners[eventName][hashCode]) {
+      return;
+    }
+
+    var args = [];
+    for (var i = 1; i < arguments.length; i++) {
+      args.push(arguments[i]);
+    }
+    var event = document.createEvent('Event');
+    event.initEvent(eventName, false, false);
+    event.mydata = args;
+    event.myself = self;
+
+    var callbacks = _globalListeners[eventName][hashCode];
+    for (var i = 0; i < callbacks.length; i++) {
+      callbacks[i].listener(event);
+    }
+  };
+  self.on = function(eventName, callback) {
+    if (!eventName || !callback || typeof callback !== "function") {
+      return;
+    }
+
+    _globalListeners[eventName] = _globalListeners[eventName] || {};
+
+    var listener = function(e) {
+      if (!e.myself || e.myself !== self) {
         return;
       }
-       _listeners[eventName] = _listeners[eventName] || [];
+      var evt = Object.create(e);
+      var mydata = evt.mydata;
+      delete evt.mydata;
+      delete evt.myself;
+      self.event = evt;
+      callback.apply(self, mydata);
+    };
+    if (!(hashCode in _globalListeners[eventName])) {
+      document.addEventListener(eventName, globalEventListener, false);
+      _globalListeners[eventName][hashCode] = [];
+    }
+    _globalListeners[eventName][hashCode].push({
+      'callback': callback,
+      'listener': listener
+    });
+  };
+  self.addEventListener = self.on;
 
-       var listener = function(e) {
-          if (!e.myself || e.myself !== self) {
-            return;
+  self.off = function(eventName, callback) {
+    var i, j, callbacks;
+    if (typeof eventName === "string") {
+      if (eventName in _globalListeners) {
+
+        if (typeof callback === "function") {
+          callbacks = _globalListeners[eventName][hashCode] ||[];
+          for (i = 0; i < callbacks.length; i++) {
+            if (callbacks[i].callback === callback) {
+              callbacks.splice(i, 1);
+              break;
+            }
           }
-          var mydata = e.mydata;
-          delete e.mydata;
-          delete e.myself;
-          self.event = e;
-          callback.apply(self, mydata);
-       };
-       document.addEventListener(eventName, listener, false);
-       _listeners[eventName].push({
-           'callback': callback,
-           'listener': listener
-       });
-   };
-   self.addEventListener = self.on;
+          if (callbacks.length === 0) {
+            delete _globalListeners[eventName][hashCode];
+          }
+        } else {
+          delete _globalListeners[eventName][hashCode];
+        }
+        if (Object.keys(_globalListeners[eventName]) === 0) {
+          document.removeEventListener(eventName, globalEventListener);
+        }
+      }
+    } else {
+      //Remove all event listeners
+      var eventNames = Object.keys(_globalListeners);
+      for (j = 0; j < eventNames.length; j++) {
+        eventName = eventNames[j];
+        delete _globalListeners[eventName][hashCode];
+        if (Object.keys(_globalListeners[eventName]) === 0) {
+          document.removeEventListener(eventName, globalEventListener);
+        }
+      }
+    }
+  };
 
-   self.off = function(eventName, callback) {
-       var i;
-       if (typeof eventName === "string") {
-           if (eventName in _listeners) {
-
-               if (typeof callback === "function") {
-                   for (i = 0; i < _listeners[eventName].length; i++) {
-                       if (_listeners[eventName][i].callback === callback) {
-                           document.removeEventListener(eventName, _listeners[eventName][i].listener);
-                           _listeners[eventName].splice(i, 1);
-                           break;
-                       }
-                   }
-               } else {
-                   for (i = 0; i < _listeners[eventName].length; i++) {
-                       document.removeEventListener(eventName, _listeners[eventName][i].listener);
-                   }
-                   delete _listeners[eventName];
-               }
-           }
-       } else {
-           //Remove all event listeners
-           var eventNames = Object.keys(_listeners);
-           for (i = 0; i < eventNames.length; i++) {
-               eventName = eventNames[i];
-               for (var j = 0; j < _listeners[eventName].length; j++) {
-                   document.removeEventListener(eventName, _listeners[eventName][j].listener);
-               }
-               delete _listeners[eventName];
-           }
-           _listeners = {};
-       }
-   };
-
-   self.removeEventListener = self.off;
+  self.removeEventListener = self.off;
 
 
-   self.one = function(eventName, callback) {
-       _listeners[eventName] = _listeners[eventName] || [];
+  self.one = function(eventName, callback) {
 
-       var listener = function(e) {
-           if (!e.myself || e.myself !== self) {
-               return;
-           }
-           var mydata = e.mydata;
-           delete e.mydata;
-           delete e.myself;
-           self.event = e;
-           callback.apply(self, mydata);
-           self.off(eventName, callback);
-       };
-       document.addEventListener(eventName, listener, false);
-       _listeners[eventName].push({
-           'callback': callback,
-           'listener': listener
-       });
-   };
-   self.addEventListenerOnce = self.one;
+    var listener = function(e) {
+      if (!e.myself || e.myself !== self) {
+        return;
+      }
+      var evt = Object.create(e);
+      var mydata = evt.mydata;
+      delete evt.mydata;
+      delete evt.myself;
+      self.event = evt;
+      callback.apply(self, mydata);
+      self.off(eventName, callback);
+    };
 
-   self.errorHandler = function(msg) {
-       if (msg) {
-           console.log(msg);
-           self.trigger('error', msg);
-       }
-       return false;
-   };
+    _globalListeners[eventName] = _globalListeners[eventName] || {};
 
-   return self;
+    if (!(hashCode in _globalListeners[eventName])) {
+      document.addEventListener(eventName, globalEventListener, false);
+      _globalListeners[eventName][hashCode] = [];
+    }
+    _globalListeners[eventName][hashCode].push({
+      'callback': callback,
+      'listener': listener
+    });
+  };
+  self.addEventListenerOnce = self.one;
+
+  self.errorHandler = function(msg) {
+    if (msg) {
+      console.log(msg);
+      self.trigger('error', msg);
+    }
+    return false;
+  };
+
+  return self;
 };
 
 

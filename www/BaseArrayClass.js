@@ -13,7 +13,7 @@ function BaseArrayClass(array) {
     }
 
     self.map = function(fn, callback) {
-        if (typeof fn !== "function" || _array.length === 0) {
+        if (typeof fn !== "function") {
             return;
         }
         var results = [];
@@ -42,6 +42,10 @@ function BaseArrayClass(array) {
         });
         var _arrayLength = _array.length;
         var finishCnt = 0;
+        if (_arrayLength === 0) {
+          callback.call(self, []);
+          return;
+        }
         _array.forEach(function(item, idx) {
           fn.call(self, item, function(value) {
             results[idx] = value;
@@ -54,7 +58,7 @@ function BaseArrayClass(array) {
     };
 
     self.forEach = function(fn, callback) {
-        if (typeof fn !== "function" || _array.length === 0) {
+        if (typeof fn !== "function") {
             return;
         }
         if (typeof fn === "function" && typeof callback !== "function") {
@@ -78,6 +82,11 @@ function BaseArrayClass(array) {
         //------------------------
         var finishCnt = 0;
         var _arrayLength = _array.length;
+        if (_arrayLength === 0) {
+          callback.call(self);
+          return;
+        }
+
         _array.forEach(function(item, idx) {
           fn.call(self, item, function() {
             finishCnt++;
@@ -88,14 +97,57 @@ function BaseArrayClass(array) {
         });
     };
 
-    self.empty = function() {
-        var tmp = [];
-        for (var i = 0; i < _array.length; i++) {
-            tmp.push(1);
+    self.filter = function(fn, callback) {
+        if (typeof fn !== "function") {
+            return;
         }
-        tmp.forEach(function() {
-          self.removeAt(0);
+        if (typeof fn === "function" && typeof callback !== "function") {
+            //------------------------
+            // example:
+            //    baseArray.filter(function(item, idx) {
+            //       ...
+            //       return true or false
+            //    });
+            //------------------------
+            return _array.filter(fn.bind(self));
+        }
+        //------------------------
+        // example:
+        //    baseArray.filter(function(item, callback) {
+        //       ...
+        //       callback(true or false);
+        //    }, function(filteredItems) {
+        //
+        //    });
+        //------------------------
+        var finishCnt = 0;
+        var _arrayLength = _array.length;
+        if (_arrayLength === 0) {
+          callback.call(self, []);
+          return;
+        }
+        var results = [];
+        _array.forEach(function(item, idx) {
+          fn.call(self, item, function(isOk) {
+            if (isOk) {
+              results.push(item);
+            }
+            finishCnt++;
+            if (finishCnt === _arrayLength) {
+              callback.call(self, results);
+            }
+          });
         });
+    };
+
+    self.indexOf = function(item) {
+        return _array.indexOf(item);
+    };
+    self.empty = function(noNotify) {
+        var cnt = _array.length;
+        for (var i = 0; i < cnt; i++) {
+          self.removeAt(0, noNotify);
+        }
     };
 
     self.push = function(value, noNotify) {
@@ -106,14 +158,16 @@ function BaseArrayClass(array) {
         return _array.length;
     };
 
-    self.insertAt = function(index, value) {
+    self.insertAt = function(index, value, noNotify) {
         if (index > _array.length) {
           for (var i = _array.length; i <= index; i++) {
             _array[i] = undefined;
           }
         }
         _array[index] = value;
-        self.trigger("insert_at", index);
+        if (noNotify !== true) {
+          self.trigger("insert_at", index);
+        }
     };
 
     self.getArray = function() {
@@ -124,29 +178,41 @@ function BaseArrayClass(array) {
         return _array[index];
     };
 
-    self.setAt = function(index, value) {
+    self.setAt = function(index, value, noNotify) {
         var prev = _array[index];
         _array[index] = value;
-        self.trigger("set_at", index, prev);
+        if (noNotify !== true) {
+          self.trigger("set_at", index, prev);
+        }
     };
 
 
-    self.removeAt = function(index) {
+    self.removeAt = function(index, noNotify) {
         var value = _array[index];
         _array.splice(index, 1);
-        self.trigger("remove_at", index, value);
+        if (noNotify !== true) {
+          self.trigger("remove_at", index, value);
+        }
         return value;
     };
 
-    self.pop = function() {
+    self.pop = function(noNotify) {
         var index = _array.length - 1;
         var value = _array.pop();
-        self.trigger("remove_at", index, value);
+        if (noNotify !== true) {
+          self.trigger("remove_at", index, value);
+        }
         return value;
     };
 
     self.getLength = function() {
         return _array.length;
+    };
+    self.reverse = function() {
+        _array = _array.reverse();
+    };
+    self.sort = function(func) {
+        _array = _array.sort(func);
     };
     return self;
 }

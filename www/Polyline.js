@@ -16,10 +16,6 @@ var Polyline = function(map, polylineId, polylineOptions) {
         value: map,
         writable: false
     });
-    Object.defineProperty(self, "hashCode", {
-        value: polylineOptions.hashCode,
-        writable: false
-    });
     Object.defineProperty(self, "id", {
         value: polylineId,
         writable: false
@@ -95,8 +91,9 @@ Polyline.prototype.getHashCode = function() {
 };
 
 Polyline.prototype.setPoints = function(points) {
-    var mvcArray = this.points;
-    mvcArray.empty();
+    var self = this;
+    var mvcArray = self.points;
+    mvcArray.empty(true);
 
     var i,
         path = [];
@@ -105,9 +102,10 @@ Polyline.prototype.setPoints = function(points) {
         mvcArray.push({
             "lat": points[i].lat,
             "lng": points[i].lng
-        });
+        }, true);
     }
-    return this;
+    exec(null, self.errorHandler, self.getPluginName(), 'setPoints', [self.id, mvcArray.getArray()]);
+    return self;
 };
 Polyline.prototype.getPoints = function() {
     return this.points;

@@ -1,8 +1,8 @@
 //
 //  MyPluginScrollView.h
-//  DevApp
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 9/22/14.
+//  Created by Masashi Katsumata.
 //
 //
 

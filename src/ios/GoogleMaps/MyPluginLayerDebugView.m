@@ -1,8 +1,8 @@
 //
 //  MyPluginLayerDebugView.m
-//  DevApp
+//  cordova-googlemaps-plugin v2
 //
-//  Created by Katsumata Masashi on 9/22/14.
+//  Created by Katsumata Masashi.
 //
 //
 

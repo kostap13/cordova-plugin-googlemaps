@@ -38,6 +38,15 @@ var Map = function(id) {
         value: id,
         writable: false
     });
+
+    self.on("active_marker_id_changed", function(prevId, newId) {
+        if (prevId in self.MARKERS) {
+            if (self.MARKERS[prevId].isInfoWindowShown()) {
+                self.MARKERS[prevId].trigger.call(self.MARKERS[prevId], event.INFO_CLOSE);
+            }
+        }
+        exec(null, null, self.id + "-marker", 'setActiveMarkerId', [newId]);
+    });
 };
 
 utils.extend(Map, BaseClass);
@@ -58,6 +67,7 @@ Map.prototype.getMap = function(mapId, div, options) {
         args = [mapId];
 
     if (!common.isDom(div)) {
+        self.set("visible", false);
         options = div;
         options = options || {};
         if (options.camera) {
@@ -82,7 +92,12 @@ Map.prototype.getMap = function(mapId, div, options) {
         args.push(options);
     } else {
 
-        var currentDiv = self.get("div");
+        var positionCSS = common.getStyle(div, "position");
+        if (!positionCSS || positionCSS === "static") {
+          // important for HtmlInfoWindow
+          div.style.position = "relative";
+        }
+        self.set("visible", true);
         options = options || {};
         if (options.camera) {
           if (options.camera.latLng) {
@@ -110,7 +125,7 @@ Map.prototype.getMap = function(mapId, div, options) {
 
         div.style.overflow = "hidden";
         self.set("div", div);
-        
+
         if (div.offsetWidth < 100 || div.offsetHeight < 100) {
           // If the map Div is too small, wait a little.
           var callee = arguments.callee;
@@ -146,15 +161,14 @@ Map.prototype.getMap = function(mapId, div, options) {
             div = div.parentNode;
         }
     }
-    
+
     cordova.fireDocumentEvent('plugin_touch', {});
 
     exec(function() {
-      // Prevent too much faster
-      setTimeout(function() {
-          self.refreshLayout();
-          self.trigger(event.MAP_READY, self);
-      }, 100);
+      self.one(event.MAP_LOADED, function() {
+        self.refreshLayout();
+        self.trigger(event.MAP_READY, self);
+      });
     }, self.errorHandler, 'CordovaGoogleMaps', 'getMap', args);
 };
 
@@ -222,7 +236,7 @@ Map.prototype.clear = function(callback) {
     if (active_marker_id && active_marker_id in self.MARKERS) {
       self.MARKERS[active_marker_id].trigger(event.INFO_CLOSE);
     }
-    
+
     var clearObj = function(obj) {
         var ids = Object.keys(obj);
         var id;
@@ -439,9 +453,13 @@ Map.prototype.getMyLocation = function(params, success_callback, error_callback)
 Map.prototype.getFocusedBuilding = function(callback) {
     exec(callback, this.errorHandler, this.id, 'getFocusedBuilding', []);
 };
+Map.prototype.getVisible = function() {
+    return this.get("visible");
+};
 Map.prototype.setVisible = function(isVisible) {
     var self = this;
     isVisible = common.parseBoolean(isVisible);
+    self.set("visible", isVisible);
     exec(null, self.errorHandler, this.id, 'setVisible', [isVisible]);
     return this;
 };
@@ -541,7 +559,6 @@ Map.prototype.setDiv = function(div) {
         }
         self.set("div", null);
     } else {
-        var currentDiv = self.get("div");
         div.setAttribute("__pluginMapId", self.id);
 
         // Webkit redraw mandatory
@@ -551,6 +568,11 @@ Map.prototype.setDiv = function(div) {
         div.style.display='';
 
         self.set("div", div);
+
+        var positionCSS = common.getStyle(div, "position");
+        if (!positionCSS || positionCSS === "static") {
+          div.style.position = "relative";
+        }
         elemId = div.getAttribute("__pluginDomId");
         if (!elemId) {
             elemId = "pgm" + Math.floor(Math.random() * Date.now());
@@ -577,20 +599,20 @@ Map.prototype.setDiv = function(div) {
 };
 
 /**
- * Return the visible region of the map.
- * Thanks @fschmidt
- */
+* Return the visible region of the map.
+*/
 Map.prototype.getVisibleRegion = function(callback) {
-    var self = this;
-    var northeast = self.get("camera_northeast");
-    var southwest = self.get("camera_southwest");
-    var latLngBounds = new LatLngBounds(northeast, southwest);
+   var self = this;
+   var cameraPosition = self.get("camera");
 
-    if (typeof callback === "function") {
-      callback.call(self, latLngBounds);
-    }
+   var latLngBounds = new LatLngBounds(cameraPosition.northeast, cameraPosition.southwest);
 
-    return latLngBounds;
+   if (typeof callback === "function") {
+     console.log("[deprecated] getVisibleRegion() is changed. Please check out the https://goo.gl/yHstHQ");
+     callback.call(self, latLngBounds);
+   }
+
+   return latLngBounds;
 };
 
 /**
@@ -718,7 +740,6 @@ Map.prototype.addGroundOverlay = function(groundOverlayOptions, callback) {
     groundOverlayOptions.bounds = common.convertToPositionArray(groundOverlayOptions.bounds);
 
     exec(function(result) {
-        groundOverlayOptions.hashCode = result.hashCode;
         var groundOverlay = new GroundOverlay(self, result.id, groundOverlayOptions);
         self.OVERLAYS[result.id] = groundOverlay;
         groundOverlay.one(result.id + "_remove", function() {
@@ -740,17 +761,43 @@ Map.prototype.addTileOverlay = function(tilelayerOptions, callback) {
     var self = this;
     tilelayerOptions = tilelayerOptions || {};
     tilelayerOptions.tileUrlFormat = tilelayerOptions.tileUrlFormat || null;
-    if (typeof tilelayerOptions.tileUrlFormat !== "string") {
-        throw new Error("tilelayerOptions.tileUrlFormat should set a string.");
+    if (typeof tilelayerOptions.tileUrlFormat === "string") {
+        console.log("[deprecated] the tileUrlFormat property is now deprecated. Use the getTile property.");
+        tilelayerOptions.getTile = function(x, y, zoom) {
+          return tilelayerOptions.tileUrlFormat.replace(/<x>/gi, x)
+                    .replace(/<y>/gi, y)
+                    .replace(/<zoom>/gi, zoom);
+        };
+    }
+    if (typeof tilelayerOptions.getTile !== "function") {
+      throw new Error("[error] the getTile property is required.");
     }
     tilelayerOptions.visible = common.defaultTrueOption(tilelayerOptions.visible);
     tilelayerOptions.zIndex = tilelayerOptions.zIndex || 0;
-    tilelayerOptions.tileSize = tilelayerOptions.tileSize || 256;
-    tilelayerOptions.opacity = tilelayerOptions.opacity || 1;
+    tilelayerOptions.tileSize = tilelayerOptions.tileSize || 512;
+    tilelayerOptions.opacity = (tilelayerOptions.opacity === null || tilelayerOptions.opacity === undefined) ? 1 : tilelayerOptions.opacity;
+    tilelayerOptions.debug = tilelayerOptions.debug === true;
     tilelayerOptions.userAgent = tilelayerOptions.userAgent || navigator.userAgent;
 
+    var options = {
+        visible: tilelayerOptions.visible,
+        zIndex: tilelayerOptions.zIndex,
+        tileSize: tilelayerOptions.tileSize,
+        opacity: tilelayerOptions.opacity,
+        userAgent: tilelayerOptions.userAgent,
+        debug: tilelayerOptions.debug,
+        _id : Math.floor(Math.random() * Date.now())
+    };
+
+    document.addEventListener(self.id + "-" + options._id + "-tileoverlay", function(params) {
+        var url = tilelayerOptions.getTile(params.x, params.y, params.zoom);
+        if (!url || url === "(null)" || url === "undefined" || url === "null") {
+          url = "(null)";
+        }
+        exec(null, self.errorHandler, self.id + "-tileoverlay", 'onGetTileUrlFromJS', [options._id, params.key, url]);
+    });
+
     exec(function(result) {
-        tilelayerOptions.hashCode = result.hashCode;
         var tileOverlay = new TileOverlay(self, result.id, tilelayerOptions);
         self.OVERLAYS[result.id] = tileOverlay;
         tileOverlay.one(result.id + "_remove", function() {
@@ -761,7 +808,7 @@ Map.prototype.addTileOverlay = function(tilelayerOptions, callback) {
         if (typeof callback === "function") {
             callback.call(self, tileOverlay, self);
         }
-    }, self.errorHandler, self.id, 'loadPlugin', ['TileOverlay', tilelayerOptions]);
+    }, self.errorHandler, self.id, 'loadPlugin', ['TileOverlay', options]);
 };
 
 //-------------
@@ -795,7 +842,6 @@ Map.prototype.addPolygon = function(polygonOptions, callback) {
     polygonOptions.geodesic = polygonOptions.geodesic === true;
 
     exec(function(result) {
-        polygonOptions.hashCode = result.hashCode;
         polygonOptions.points = _orgs;
         var polygon = new Polygon(self, result.id, polygonOptions);
         self.OVERLAYS[result.id] = polygon;
@@ -826,7 +872,6 @@ Map.prototype.addPolyline = function(polylineOptions, callback) {
     polylineOptions.geodesic = polylineOptions.geodesic === true;
     exec(function(result) {
         polylineOptions.points = _orgs;
-        polylineOptions.hashCode = result.hashCode;
         var polyline = new Polyline(self, result.id, polylineOptions);
         self.OVERLAYS[result.id] = polyline;
         polyline.one(result.id + "_remove", function() {
@@ -856,7 +901,6 @@ Map.prototype.addCircle = function(circleOptions, callback) {
     circleOptions.radius = circleOptions.radius || 1;
 
     exec(function(result) {
-        circleOptions.hashCode = result.hashCode;
         var circle = new Circle(self, result.id, circleOptions);
         self.OVERLAYS[result.id] = circle;
 
@@ -889,7 +933,6 @@ Map.prototype.addMarker = function(markerOptions, callback) {
     markerOptions.rotation = markerOptions.rotation || 0;
     markerOptions.opacity = parseFloat("" + markerOptions.opacity, 10) || 1;
     markerOptions.disableAutoPan = markerOptions.disableAutoPan === true;
-    markerOptions.useHtmlInfoWnd = !(markerOptions.infoWindow === undefined);
     markerOptions.noCache = markerOptions.noCache === true; //experimental
 
     if ("styles" in markerOptions) {
@@ -904,7 +947,6 @@ Map.prototype.addMarker = function(markerOptions, callback) {
     }
 
     exec(function(result) {
-        markerOptions.hashCode = result.hashCode;
         var marker = new Marker(self, result.id, markerOptions);
 
         self.MARKERS[result.id] = marker;
@@ -947,10 +989,9 @@ Map.prototype._onMarkerEvent = function(eventName, markerId, position) {
     }
 };
 
-
-Map.prototype._onOverlayEvent = function(eventName, hashCode) {
+Map.prototype._onOverlayEvent = function(eventName, overlayId) {
     var self = this;
-    var overlay = self.OVERLAYS[hashCode] || null;
+    var overlay = self.OVERLAYS[overlayId] || null;
     if (overlay) {
         var args = [eventName];
         for (var i = 2; i < arguments.length; i++) {
@@ -960,6 +1001,7 @@ Map.prototype._onOverlayEvent = function(eventName, hashCode) {
     }
 };
 
+/*
 Map.prototype._onKmlEvent = function(eventName, objectType, kmlLayerId, result, options) {
     var self = this;
     var kmlLayer = self.KML_LAYERS[kmlLayerId] || null;
@@ -1026,7 +1068,7 @@ Map.prototype._onKmlEvent = function(eventName, objectType, kmlLayerId, result, 
     }
     //kmlLayer.trigger.apply(kmlLayer, args);
 };
-
+*/
 
 Map.prototype.getCameraTarget = function() {
     return this.get("camera_target");
@@ -1041,9 +1083,8 @@ Map.prototype.getCameraTilt = function() {
 Map.prototype.getCameraBearing = function() {
     return this.get("camera_bearing");
 };
-Map.prototype._onCameraEvent = function(eventName, params) {
-    //var cameraPosition = new CameraPosition(params);
-    var cameraPosition = params;
+
+Map.prototype._onCameraEvent = function(eventName, cameraPosition) {
     this.set('camera', cameraPosition);
     this.set('camera_target', cameraPosition.target);
     this.set('camera_zoom', cameraPosition.zoom);

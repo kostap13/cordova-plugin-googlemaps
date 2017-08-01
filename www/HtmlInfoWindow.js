@@ -1,4 +1,5 @@
 var utils = require('cordova/utils'),
+    event = require('./event'),
     common = require('./Common'),
     BaseClass = require('./BaseClass');
 
@@ -27,6 +28,7 @@ var HTMLInfoWindow = function() {
     contentFrame.style.border = "1px solid rgb(204, 204, 204)";
     contentFrame.style.left = "0px";
     contentFrame.style.right = "0px";
+    contentFrame.style.zIndex = "1";  // In order to set higher depth than the map div certainly
     frame.appendChild(contentFrame);
     contentFrame.appendChild(contentBox);
 
@@ -75,7 +77,13 @@ var HTMLInfoWindow = function() {
           contentBox.style.whiteSpace="nowrap";
           contentBox.innerHTML = content;
       } else {
-          contentBox.appendChild(content);
+          if (!content) {
+            contentBox.innerText = "";
+          } else if (content.nodeType === 1) {
+            contentBox.appendChild(content);
+          } else {
+            contentBox.innerText = content;
+          }
       }
 
       // Insert the contents to this HTMLInfoWindow
@@ -143,6 +151,8 @@ var HTMLInfoWindow = function() {
       self.trigger("infoPosition_changed", "", infoPosition);
     };
 
+    var isInfoOpenFired = false;
+
     self.on("infoPosition_changed", function(ignore, point) {
 
         var x = point.x - self.get("offsetX");
@@ -151,6 +161,16 @@ var HTMLInfoWindow = function() {
 
         frame.style.left = x + "px";
         frame.style.top =  y + "px";
+
+        if (!isInfoOpenFired) {
+            isInfoOpenFired = true;
+            self.trigger(event.INFO_OPEN);
+        }
+
+        cordova.fireDocumentEvent('plugin_touch', {});
+    });
+    self.on(event.INFO_CLOSE, function() {
+        isInfoOpenFired = false;
     });
     self.on("infoWindowAnchor_changed", calculate);
     self.on("icon_changed", calculate);
@@ -159,19 +179,31 @@ var HTMLInfoWindow = function() {
 
 utils.extend(HTMLInfoWindow, BaseClass);
 
-HTMLInfoWindow.prototype.close = function(marker) {
-    if (!marker) {
-        return;
+HTMLInfoWindow.prototype.isInfoWindowShown = function() {
+    return this.get("marker") ? true : false;
+};
+
+HTMLInfoWindow.prototype.close = function() {
+    var self = this;
+
+    var marker = self.get("marker");
+    if (!self.isInfoWindowShown() || !marker) {
+      return;
     }
+    marker.set("infoWindow", undefined);
+    this.set('marker', undefined);
+
     var map = marker.getMap();
     map.off("infoPosition_changed");
     marker.off("icon_changed");
     marker.off("infoWindowAnchor_changed");
+    self.trigger(event.INFO_CLOSE);
+    marker.off(event.INFO_CLOSE, self.close);  //This event listener is assigned in the open method. So detach it.
+    map.set("active_marker_id", null);
 
     var div = map.getDiv();
-    var frame = this.get("frame");
+    var frame = self.get("frame");
     div.removeChild(frame);
-    this.set('marker', undefined);
 
     // Remove the contents from this HTMLInfoWindow
     var contentFrame = frame.firstChild;
@@ -180,7 +212,13 @@ HTMLInfoWindow.prototype.close = function(marker) {
 };
 
 HTMLInfoWindow.prototype.setContent = function(content) {
-  this.set("content", content);
+    var self = this;
+    var prevContent = self.get("content");
+    self.set("content", content);
+    var marker = self.get("marker");
+    if (content !== prevContent && marker && marker.isInfoWindowShown()) {
+      self.trigger("infoWindowAnchor_changed");
+    }
 };
 
 HTMLInfoWindow.prototype.open = function(marker) {
@@ -188,19 +226,29 @@ HTMLInfoWindow.prototype.open = function(marker) {
         return;
     }
     var map = marker.getMap();
-    var self = this;
+    var self = this,
+      markerId = marker.getId();
 
-    map.bindTo("infoPosition", this);
-    marker.bindTo("infoWindowAnchor", this);
-    marker.bindTo("icon", this);
-    this.set("marker", marker);
-    this.trigger("infoWindowAnchor_changed");
+    marker.set("infoWindow", self);
+
+    map.fromLatLngToPoint(marker.getPosition(), function(point) {
+        map.set("infoPosition", {x: point[0], y: point[1]});
+
+        map.bindTo("infoPosition", self);
+        marker.bindTo("infoWindowAnchor", self);
+        marker.bindTo("icon", self);
+        marker.on(event.INFO_CLOSE, self.close.bind(self));
+        self.set("marker", marker);
+        map.set("active_marker_id", marker.getId());
+        self.on(event.INFO_OPEN);
+        self.trigger.call(self, "infoWindowAnchor_changed");
+    });
 };
 
 HTMLInfoWindow.prototype.setBackgroundColor = function(backgroundColor) {
   this.get("frame").children[0].style.backgroundColor = backgroundColor;
-  this.get("frame").children[1].children[0].style.borderColor = backgroundColor + " transparent transparent";
-  this.get("frame").children[1].children[1].style.borderColor = backgroundColor + " transparent transparent";
+  this.get("frame").children[1].children[0].style.borderColor = backgroundColor + " rgba(0,0,0,0) rgba(0,0,0,0)";
+  this.get("frame").children[1].children[1].style.borderColor = backgroundColor + " rgba(0,0,0,0) rgba(0,0,0,0)";
 };
 
 module.exports = HTMLInfoWindow;

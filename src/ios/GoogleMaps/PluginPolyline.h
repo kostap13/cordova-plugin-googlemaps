@@ -1,8 +1,8 @@
 //
-//  Polyline.h
-//  SimpleMap
+//  PluginPolyline.h
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 11/14/13.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -17,6 +17,7 @@
 
 - (void)setStrokeColor:(CDVInvokedUrlCommand*)command;
 - (void)setStrokeWidth:(CDVInvokedUrlCommand*)command;
+- (void)setPoints:(CDVInvokedUrlCommand*)command;
 - (void)removePointAt:(CDVInvokedUrlCommand*)command;
 - (void)setPointAt:(CDVInvokedUrlCommand*)command;
 - (void)insertPointAt:(CDVInvokedUrlCommand*)command;

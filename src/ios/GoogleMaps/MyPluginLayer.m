@@ -1,8 +1,8 @@
 //
-//  DummyView.m
-//  DevApp
+//  MyPluginLayer.m
+//  cordova-googlemaps-plugin v2
 //
-//  Created by masashi on 8/13/14.
+//  Created by Masashi Katsumata.
 //
 //
 
@@ -19,6 +19,7 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
 
     self = [super initWithFrame:[webView frame]];
     self.webView = webView;
+    self.isSuspended = NO;
     self.opaque = NO;
     [self.webView removeFromSuperview];
     // prevent webView from bouncing
@@ -74,6 +75,28 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
   if (self.pluginScrollView.debugView.debuggable) {
       [self.pluginScrollView.debugView setNeedsDisplay];
   }
+}
+- (void)clearHTMLElements {
+    @synchronized(self.pluginScrollView.debugView.HTMLNodes) {
+      NSMutableDictionary *domInfo;
+      NSString *domId;
+      NSArray *keys=[self.pluginScrollView.debugView.HTMLNodes allKeys];
+      NSArray *keys2;
+      int i, j;
+      for (i = 0; i < [keys count]; i++) {
+        domId = [keys objectAtIndex:i];
+        domInfo = [self.pluginScrollView.debugView.HTMLNodes objectForKey:domId];
+        if (domInfo) {
+            keys2 = [domInfo allKeys];
+            for (j = 0; j < [keys2 count]; j++) {
+                [domInfo removeObjectForKey:[keys2 objectAtIndex:j]];
+            }
+            domInfo = nil;
+        }
+        [self.pluginScrollView.debugView.HTMLNodes removeObjectForKey:domId];
+      }
+    }
+
 }
 
 - (void)putHTMLElements:(NSDictionary *)elementsDic {
@@ -156,7 +179,10 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
 }
 
 - (void)resizeTask:(NSTimer *)timer {
-
+    if (self.isSuspended) {
+      // Assumes all touches for the browser
+      return;
+    }
     if (stopFlag) {
         return;
     }
@@ -182,16 +208,16 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
 
 - (void)updateViewPosition:(GoogleMapsViewController *)mapCtrl {
 
-      CGFloat zoomScale = self.webView.scrollView.zoomScale;
+    CGFloat zoomScale = self.webView.scrollView.zoomScale;
 
-      CGPoint offset = self.webView.scrollView.contentOffset;
-      offset.x *= zoomScale;
-      offset.y *= zoomScale;
-      [self.pluginScrollView setContentOffset:offset];
+    CGPoint offset = self.webView.scrollView.contentOffset;
+    offset.x *= zoomScale;
+    offset.y *= zoomScale;
+    [self.pluginScrollView setContentOffset:offset];
 
-      if (!mapCtrl.mapDivId) {
-          return;
-      }
+    if (!mapCtrl.mapDivId) {
+        return;
+    }
 
     NSDictionary *domInfo = nil;
     @synchronized(self.pluginScrollView.debugView.HTMLNodes) {
@@ -201,67 +227,79 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
       }
 
     }
-      NSString *rectStr = [domInfo objectForKey:@"size"];
-      if (rectStr == nil || [rectStr  isEqual: @"null"]) {
+    NSString *rectStr = [domInfo objectForKey:@"size"];
+    if (rectStr == nil || [rectStr  isEqual: @"null"]) {
+      return;
+    }
+
+    __block CGRect rect = CGRectFromString(rectStr);
+    rect.origin.x *= zoomScale;
+    rect.origin.y *= zoomScale;
+    rect.size.width *= zoomScale;
+    rect.size.height *= zoomScale;
+    rect.origin.x += offset.x;
+    rect.origin.y += offset.y;
+
+    float webviewWidth = self.webView.frame.size.width;
+    float webviewHeight = self.webView.frame.size.height;
+
+
+    // Is the map is displayed?
+    if (rect.origin.y + rect.size.height >= offset.y &&
+        rect.origin.x + rect.size.width >= offset.x &&
+        rect.origin.y < offset.y + webviewHeight &&
+        rect.origin.x < offset.x + webviewWidth &&
+        mapCtrl.view.hidden == NO) {
+
+        // Attach the map view to the parent.
+        if (mapCtrl.isRenderedAtOnce == YES ||
+            (mapCtrl.map.mapType != kGMSTypeSatellite &&
+            mapCtrl.map.mapType != kGMSTypeHybrid)) {
+            [self.pluginScrollView attachView:mapCtrl.view];
+        }
+
+    } else {
+        // Detach from the parent view
+        if (mapCtrl.isRenderedAtOnce == YES ||
+            (mapCtrl.map.mapType != kGMSTypeSatellite &&
+            mapCtrl.map.mapType != kGMSTypeHybrid)) {
+            [mapCtrl.view removeFromSuperview];
+        }
+    }
+
+    if (mapCtrl.isRenderedAtOnce == YES &&
+        rect.origin.x == mapCtrl.view.frame.origin.x &&
+        rect.origin.y == mapCtrl.view.frame.origin.y &&
+        rect.size.width == mapCtrl.view.frame.size.width &&
+        rect.size.height == mapCtrl.view.frame.size.height) {
         return;
-      }
+    }
 
-      __block CGRect rect = CGRectFromString(rectStr);
-      rect.origin.x *= zoomScale;
-      rect.origin.y *= zoomScale;
-      rect.size.width *= zoomScale;
-      rect.size.height *= zoomScale;
-      rect.origin.x += offset.x;
-      rect.origin.y += offset.y;
-///*
-      float webviewWidth = self.webView.frame.size.width;
-      float webviewHeight = self.webView.frame.size.height;
-
-
-      // Is the map is displayed?
-      if (rect.origin.y + rect.size.height >= offset.y &&
-          rect.origin.x + rect.size.width >= offset.x &&
-          rect.origin.y < offset.y + webviewHeight &&
-          rect.origin.x < offset.x + webviewWidth &&
-          mapCtrl.view.hidden == NO) {
-
-          // Attach the map view to the parent.
-          if (mapCtrl.isRenderedAtOnce == YES ||
-              (mapCtrl.map.mapType != kGMSTypeSatellite &&
-              mapCtrl.map.mapType != kGMSTypeHybrid)) {
-              [self.pluginScrollView attachView:mapCtrl.view];
-          }
-
-      } else {
-          // Detach from the parent view
-          if (mapCtrl.isRenderedAtOnce == YES ||
-              (mapCtrl.map.mapType != kGMSTypeSatellite &&
-              mapCtrl.map.mapType != kGMSTypeHybrid)) {
-              [mapCtrl.view removeFromSuperview];
-          }
-      }
-///*/
+    dispatch_async(dispatch_get_main_queue(), ^{
       mapCtrl.isRenderedAtOnce = YES;
 
-      if (rect.origin.x == mapCtrl.view.frame.origin.x &&
-          rect.origin.y == mapCtrl.view.frame.origin.y &&
-          rect.size.width == mapCtrl.view.frame.size.width &&
-          rect.size.height == mapCtrl.view.frame.size.height) {
-          return;
-      }
+        [mapCtrl.view setFrame:rect];
 
-  dispatch_async(dispatch_get_main_queue(), ^{
-      [mapCtrl.view setFrame:rect];
-
-      rect.origin.x = 0;
-      rect.origin.y = 0;
+        rect.origin.x = 0;
+        rect.origin.y = 0;
       [mapCtrl.map setFrame:rect];
 
-  });
+    });
 
 }
-
+- (void)execJS: (NSString *)jsString {
+    if ([self.webView respondsToSelector:@selector(stringByEvaluatingJavaScriptFromString:)]) {
+        [self.webView performSelector:@selector(stringByEvaluatingJavaScriptFromString:) withObject:jsString];
+    } else if ([self.webView respondsToSelector:@selector(evaluateJavaScript:completionHandler:)]) {
+        [self.webView performSelector:@selector(evaluateJavaScript:completionHandler:) withObject:jsString withObject:nil];
+    }
+}
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.isSuspended || self.pluginScrollView.debugView.mapCtrls == nil || self.pluginScrollView.debugView.mapCtrls.count == 0) {
+      // Assumes all touches for the browser
+      [self execJS:@"javascript:if(window.cordova){cordova.fireDocumentEvent('plugin_touch', {});}"];
+      return [self.webView hitTest:point withEvent:event];
+    }
 
     float offsetX = self.webView.scrollView.contentOffset.x;
     float offsetY = self.webView.scrollView.contentOffset.y;
@@ -369,29 +407,26 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
             }
         }
 
-        if (isMapAction == NO) {
-            continue;
+        if (isMapAction == YES) {
+
+          // If user click on the map, return the mapCtrl.view.
+          offsetX = (mapCtrl.view.frame.origin.x * zoomScale) - offsetX;
+          offsetY = (mapCtrl.view.frame.origin.y * zoomScale) - offsetY;
+          CGPoint point2 = CGPointMake(point.x * zoomScale, point.y * zoomScale);
+          point2.x -= offsetX;
+          point2.y -= offsetY;
+
+          UIView *hitView =[mapCtrl.view hitTest:point2 withEvent:event];
+          //NSLog(@"--> (hit test) point = %f, %f / hit = %@", clickPointAsHtml.x, clickPointAsHtml.y,  hitView.class);
+
+          return hitView;
         }
-
-        // If user click on the map, return the mapCtrl.view.
-        offsetX = (mapCtrl.view.frame.origin.x * zoomScale) - offsetX;
-        offsetY = (mapCtrl.view.frame.origin.y * zoomScale) - offsetY;
-        CGPoint point2 = CGPointMake(point.x * zoomScale, point.y * zoomScale);
-        point2.x -= offsetX;
-        point2.y -= offsetY;
-
-        UIView *hitView =[mapCtrl.view hitTest:point2 withEvent:event];
-        //NSLog(@"--> (hit test) point = %f, %f / hit = %@", clickPointAsHtml.x, clickPointAsHtml.y,  hitView.class);
-
-        [mapCtrl execJS:@"javascript:cordova.fireDocumentEvent('plugin_touch', {});"];
-
-        return hitView;
     }
 }
 
     UIView *hitView =[self.webView hitTest:point withEvent:event];
     //NSLog(@"--> (hit test) hit = %@", hitView.class);
-    [mapCtrl execJS:@"javascript:cordova.fireDocumentEvent('plugin_touch', {});"];
+    [self execJS:@"javascript:(cordova && cordova.fireDocumentEvent('plugin_touch', {}));"];
     return hitView;
 
 }

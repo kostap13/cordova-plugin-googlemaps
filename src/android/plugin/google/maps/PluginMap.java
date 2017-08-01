@@ -77,7 +77,7 @@ import java.util.Set;
 
 public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     OnInfoWindowClickListener, OnMapClickListener, OnMapLongClickListener,
-    OnMarkerDragListener,
+    OnMarkerDragListener, GoogleMap.OnMapLoadedCallback,
     OnMyLocationButtonClickListener, OnIndoorStateChangeListener, InfoWindowAdapter,
     GoogleMap.OnCameraIdleListener, GoogleMap.OnCameraMoveCanceledListener,
     GoogleMap.OnCameraMoveListener, GoogleMap.OnCameraMoveStartedListener,
@@ -97,7 +97,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   public HashMap<String, PluginEntry> plugins = new HashMap<String, PluginEntry>();
   final int DEFAULT_CAMERA_PADDING = 20;
   private Projection projection = null;
-  private Marker activeMarker = null;
+  public Marker activeMarker = null;
   private boolean isDragging = false;
 
 
@@ -297,6 +297,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
               map.setOnMarkerClickListener(PluginMap.this);
               map.setOnMarkerDragListener(PluginMap.this);
               map.setOnMyLocationButtonClickListener(PluginMap.this);
+              map.setOnMapLoadedCallback(PluginMap.this);
               map.setOnIndoorStateChangeListener(PluginMap.this);
               map.setOnInfoWindowClickListener(PluginMap.this);
               map.setOnInfoWindowLongClickListener(PluginMap.this);
@@ -308,44 +309,6 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
               mapView.onResume();
 
-              // ------------------------------
-              // Embed the map if a container is specified.
-              // ------------------------------
-              if (args.length() == 3) {
-                mapDivId = args.getString(2);
-                RectF rectF;
-
-                mapCtrl.mPluginLayout.addPluginMap(PluginMap.this);
-                PluginMap.this.resizeMap(args, new PluginUtil.MyCallbackContext("dummy-" + map.hashCode(), webView) {
-                  @Override
-                  public void onResult(PluginResult pluginResult) {
-
-                    if (initCameraBounds != null) {
-                      map.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
-                        @Override
-                        public void onCameraIdle() {
-                          PluginMap.this.onCameraIdle();
-                          map.setOnCameraIdleListener(PluginMap.this);
-                          Handler handler = new Handler();
-                          handler.postDelayed(new AdjustInitCamera(params), 500);
-                        }
-                      });
-                    }
-                  }
-                });
-              } else {
-                if (initCameraBounds != null) {
-                  map.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
-                    @Override
-                    public void onCameraIdle() {
-                      PluginMap.this.onCameraIdle();
-                      map.setOnCameraIdleListener(PluginMap.this);
-                      Handler handler = new Handler();
-                      handler.postDelayed(new AdjustInitCamera(params), 500);
-                    }
-                  });
-                }
-              }
               if (params.has("controls")) {
                 JSONObject controls = params.getJSONObject("controls");
 
@@ -363,17 +326,62 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                           e.printStackTrace();
                           callbackContext.error(e.getMessage() + "");
                         }
-                      } else {
-                        callbackContext.success();
                       }
                     }
                   });
-
-                } else {
-                  callbackContext.success();
                 }
+              }
+
+              // ------------------------------
+              // Embed the map if a container is specified.
+              // ------------------------------
+              if (args.length() == 3) {
+                mapDivId = args.getString(2);
+
+                mapCtrl.mPluginLayout.addPluginMap(PluginMap.this);
+                PluginMap.this.resizeMap(args, new PluginUtil.MyCallbackContext("dummy-" + map.hashCode(), webView) {
+                  @Override
+                  public void onResult(PluginResult pluginResult) {
+
+                    if (initCameraBounds != null) {
+                      map.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
+                        @Override
+                        public void onCameraIdle() {
+                          mapView.setVisibility(View.INVISIBLE);
+                          PluginMap.this.onCameraIdle();
+                          map.setOnCameraIdleListener(PluginMap.this);
+                          Handler handler = new Handler();
+                          handler.postDelayed(new AdjustInitCamera(params, callbackContext), 500);
+                        }
+                      });
+                    } else {
+                      mapView.setVisibility(View.VISIBLE);
+                      callbackContext.success();
+                      //if (map.getMapType() == GoogleMap.MAP_TYPE_NONE) {
+                        PluginMap.this.onMapLoaded();
+                      //}
+                    }
+                  }
+                });
               } else {
-                callbackContext.success();
+                if (initCameraBounds != null) {
+                  map.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
+                    @Override
+                    public void onCameraIdle() {
+                      PluginMap.this.onCameraIdle();
+                      map.setOnCameraIdleListener(PluginMap.this);
+                      mapView.setVisibility(View.INVISIBLE);
+                      Handler handler = new Handler();
+                      handler.postDelayed(new AdjustInitCamera(params, callbackContext), 500);
+                    }
+                  });
+                } else {
+                  mapView.setVisibility(View.VISIBLE);
+                  callbackContext.success();
+                  //if (map.getMapType() == GoogleMap.MAP_TYPE_NONE) {
+                    PluginMap.this.onMapLoaded();
+                  //}
+                }
               }
             } catch (Exception e) {
               callbackContext.error(e.getMessage());
@@ -388,8 +396,10 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
 
   private class AdjustInitCamera implements Runnable {
     private JSONObject mParams;
-    public AdjustInitCamera(JSONObject params) {
+    private CallbackContext mCallback;
+    public AdjustInitCamera(JSONObject params, CallbackContext callbackContext) {
       mParams = params;
+      mCallback = callbackContext;
     }
     @Override
     public void run() {
@@ -423,6 +433,12 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
         e.printStackTrace();
       }
       map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()));
+      mapView.setVisibility(View.VISIBLE);
+
+      mCallback.success();
+      if (map.getMapType() == GoogleMap.MAP_TYPE_NONE) {
+        PluginMap.this.onMapLoaded();
+      }
 
       //fitBounds(initCameraBounds, CAMERA_PADDING);
     }
@@ -431,7 +447,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   //-----------------------------------
   // Create the instance of class
   //-----------------------------------
-  public void loadPlugin(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+  public synchronized void loadPlugin(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
     final String serviceName = args.getString(0);
     final String pluginName = mapId + "-" + serviceName.toLowerCase();
     //Log.d("PluginMap", "serviceName = " + serviceName + ", pluginName = " + pluginName);
@@ -648,6 +664,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
                   map.setOnMapLongClickListener(null);
                   map.setOnMarkerClickListener(null);
                   map.setOnMyLocationButtonClickListener(null);
+                  map.setOnMapLoadedCallback(null);
                   map.setOnMarkerDragListener(null);
                 } catch (SecurityException e) {
                   e.printStackTrace();
@@ -925,7 +942,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     if (pluginMarker.objects.containsKey(propertyId)) {
       properties = (JSONObject) pluginMarker.objects.get(propertyId);
       try {
-        if (properties.has("useHtmlInfoWnd") && properties.getBoolean("useHtmlInfoWnd")) {
+        if (marker.getTitle() == null && marker.getSnippet() == null) {
 
           syncInfoWndPosition();
           this.onMarkerEvent("info_open", marker);
@@ -1645,7 +1662,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
               }
             }
             if (callbackContext != null) {
-              sendNoResult(callbackContext);
+              callbackContext.success();
             }
           }
         });
@@ -1862,6 +1879,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
     this.activity.runOnUiThread(new Runnable() {
       @Override
       public void run() {
+        projection = map.getProjection();
         Point point = projection.toScreenLocation(latLng);
         try {
           JSONArray pointJSON = new JSONArray();
@@ -1887,6 +1905,7 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
       @Override
       public void run() {
 
+        projection = map.getProjection();
         LatLng latlng = projection.fromScreenLocation(point);
         try {
           JSONArray pointJSON = new JSONArray();
@@ -2016,6 +2035,12 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
   @Override
   public void onInfoWindowClose(Marker marker) {
     this.onMarkerEvent("info_close", marker);
+    activeMarker = null;
+  }
+
+  @Override
+  public void onMapLoaded() {
+    this.onMapEvent("map_loaded");
   }
 
 
@@ -2265,16 +2290,38 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
           target.put("lng", position.target.longitude);
           params.put("target", target);
 
-          LatLngBounds latLngBounds = projection.getVisibleRegion().latLngBounds;
-          JSONObject result = new JSONObject();
+          VisibleRegion visibleRegion = projection.getVisibleRegion();
+          LatLngBounds latLngBounds = visibleRegion.latLngBounds;
+
           JSONObject northeast = new JSONObject();
-          JSONObject southwest = new JSONObject();
           northeast.put("lat", latLngBounds.northeast.latitude);
           northeast.put("lng", latLngBounds.northeast.longitude);
+          params.put("northeast", northeast);
+
+          JSONObject southwest = new JSONObject();
           southwest.put("lat", latLngBounds.southwest.latitude);
           southwest.put("lng", latLngBounds.southwest.longitude);
-          params.put("northeast", northeast);
           params.put("southwest", southwest);
+
+          JSONObject nearLeft = new JSONObject();
+          nearLeft.put("lat", visibleRegion.nearLeft.latitude);
+          nearLeft.put("lng", visibleRegion.nearLeft.longitude);
+          params.put("nearLeft", nearLeft);
+
+          JSONObject nearRight = new JSONObject();
+          nearRight.put("lat", visibleRegion.nearRight.latitude);
+          nearRight.put("lng", visibleRegion.nearRight.longitude);
+          params.put("nearRight", nearRight);
+
+          JSONObject farLeft = new JSONObject();
+          farLeft.put("lat", visibleRegion.farLeft.latitude);
+          farLeft.put("lng", visibleRegion.farLeft.longitude);
+          params.put("farLeft", farLeft);
+
+          JSONObject farRight = new JSONObject();
+          farRight.put("lat", visibleRegion.farRight.latitude);
+          farRight.put("lng", visibleRegion.farRight.longitude);
+          params.put("farRight", farRight);
 
           jsonStr = params.toString();
         } catch (JSONException e) {
@@ -2439,6 +2486,10 @@ public class PluginMap extends MyPlugin implements OnMarkerClickListener,
       @Override
       public void onPostExecute(HashMap<String, Object> boundsHitList) {
 
+        if (activeMarker != null) {
+          onInfoWindowClose(activeMarker);
+
+        }
         String key;
         Map.Entry<String, Object> entry;
 

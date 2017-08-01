@@ -213,73 +213,86 @@ function getDivRect(div) {
     };
 }
 
-function getAllChildren(root) {
-    if (!root) {
-      return [];
+var ignoreTags = [
+  "pre", "textarea", "p", "form", "input", "table", "caption",
+  "canvas", "ion-content", "ion-app", "ion-nav", "svg"
+];
+var ignoreClasses = ["nav-decor", "ion-page", "fixed-content"];
+
+function shouldWatchByNative(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE || !node.parentNode) {
+    if (node === document.body) {
+      return true;
     }
-
-    var ignoreTags = ["pre", "textarea", "p", "form", "input", "table", "caption"];
-
-    var list;
-    if (window.document.querySelectorAll) {
-        // Android: v4.3 and over
-        // iOS safari: v9.2 and over
-        var childNodes = root.querySelectorAll("*");
-        var allClickableElements = Array.prototype.slice.call(childNodes);
-        list = allClickableElements.filter(function(node) {
-            var tagName = node.tagName.toLowerCase();
-            return node !== root && _shouldWatchByNative(node) && ignoreTags.indexOf(tagName) == -1;
-        });
-    } else {
-        var node;
-        var clickableElements = root.getElementsByTagName("*");
-        for (var i = 0; i < clickableElements.length; i++) {
-            node = clickableElements[i];
-            if (_shouldWatchByNative(node) && ignoreTags.indexOf(tagName) == -1) {
-                list.push(node);
-            }
-        }
-    }
-
-    return list;
-}
-function _shouldWatchByNative(node) {
-  if (node.nodeType !== Node.ELEMENT_NODE) {
-    return;
+    return false;
   }
+
+  var tagName = node.tagName.toLowerCase();
+  if (ignoreTags.indexOf(tagName) == -1) {
+
+    var classNames = (node.className || "").split(" ");
+    var matches = classNames.filter(function(clsName) {
+      return ignoreClasses.indexOf(clsName) !== -1;
+    });
+    if (matches && matches.length > 0) {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
   var visibilityCSS = getStyle(node, 'visibility');
   var displayCSS = getStyle(node, 'display');
   var opacityCSS = getStyle(node, 'opacity');
   opacityCSS = /^[\d.]+$/.test(opacityCSS + "") ? opacityCSS : 1;
-  var heightCSS = getStyle(node, 'height');
-  var widthCSS = getStyle(node, 'width');
-  var clickableSize = (heightCSS != "0px" && widthCSS != "0px" &&
-            (node.offsetHeight > 0 && node.offsetWidth > 0 || node.clientHeight > 0 && node.clientWidth > 0));
-  return displayCSS !== "none" && opacityCSS > 0 && visibilityCSS != "hidden" && clickableSize;
+  var clickableSize = (node.offsetHeight > 0 && node.offsetWidth > 0 || node.clientHeight > 0 && node.clientWidth > 0);
+  return displayCSS !== "none" &&
+    opacityCSS > 0 && visibilityCSS !== "hidden" &&
+    clickableSize;
 }
 
 
 // Get z-index order
 // http://stackoverflow.com/a/24136505
+var internalCache = {};
 function getZIndex(dom) {
+    if (dom === document.body) {
+      internalCache = undefined;
+      internalCache = {};
+    }
     var z = null;
     if (!dom) {
       return 0;
     }
+
     if (window.getComputedStyle) {
       try {
-        z = document.defaultView.getComputedStyle(dom, null).getPropertyValue('z-index');
+        z = parseInt(document.defaultView.getComputedStyle(dom, null).getPropertyValue('z-index'), 10);
       } catch(e) {}
     }
     if (dom.currentStyle) {
-        z = dom.currentStyle['z-index'];
+        z = parseInt(dom.currentStyle['z-index']);
     }
     if (dom === document.body && z === "auto") {
       z = 0;
     }
     if (isNaN(z)) {
-        return getZIndex(dom.parentNode);
+        z = 0;
     }
+    var parentNode = dom.parentNode;
+    if (parentNode && parentNode.nodeType === Node.ELEMENT_NODE) {
+      var parentElemId = parentNode.getAttribute("__pluginDomId");
+      if (parentElemId in internalCache) {
+        z += internalCache[parentElemId];
+      } else {
+        var parentZIndex = getZIndex(dom.parentNode);
+        internalCache[parentElemId] = parentZIndex;
+        z += parentZIndex;
+      }
+    }
+    var elemId = dom.getAttribute("__pluginDomId");
+    internalCache[elemId] = z;
+
     return z;
 }
 
@@ -288,21 +301,16 @@ function getDomDepth(dom, idx) {
       return 0;
     }
     var orgDom = dom;
-    var depth = 0;
     var zIndex = getZIndex(dom);
+    /*
+    var depth = 0;
     while (dom.parentNode !== null && dom.parentNode != document) {
         dom = dom.parentNode;
         depth++;
     }
-    //if (zIndex > -1) {
-    //  depth = depth * 1000 + zIndex;
-    //} else {
-    //  depth = zIndex;
-    //}
-
-    //orgDom.setAttribute("_depth", depth + "_" + zIndex + "_" + idx);
-    var result = idx * 1000 + parseInt(zIndex, 10) + depth;
-    orgDom.setAttribute("_result", result);
+    */
+    var result = (zIndex + 1) * 1000 + idx;
+    orgDom.setAttribute("_depth", result); // for debugging
     return result;
 }
 
@@ -530,11 +538,11 @@ function convertToPositionArray(array) {
 }
 
 module.exports = {
+    getZIndex: getZIndex,
     getDomDepth: getDomDepth,
     deleteFromObject: deleteFromObject,
     getDivRect: getDivRect,
     getDomInfo: getDomInfo,
-    getAllChildren: getAllChildren,
     isDom: isDom,
     parseBoolean: parseBoolean,
     HLStoRGB: HLStoRGB,
@@ -544,5 +552,6 @@ module.exports = {
     createMvcArray: createMvcArray,
     getStyle: getStyle,
     convertToPositionArray: convertToPositionArray,
-    getLatLng: getLatLng
+    getLatLng: getLatLng,
+    shouldWatchByNative: shouldWatchByNative
 };
