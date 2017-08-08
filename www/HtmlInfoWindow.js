@@ -71,10 +71,12 @@ var HTMLInfoWindow = function() {
       var frame = self.get("frame");
       var contentFrame = frame.firstChild;
       var contentBox = contentFrame.firstChild;
+      contentBox.style.minWidth = "100px";
+      contentBox.style.minHeight = "50px";
 
       var content = self.get("content");
       if (typeof content === "string") {
-          contentBox.style.whiteSpace="nowrap";
+          contentBox.style.whiteSpace="pre-wrap";
           contentBox.innerHTML = content;
       } else {
           if (!content) {
@@ -92,7 +94,7 @@ var HTMLInfoWindow = function() {
       }
 
       // Adjust the HTMLInfoWindow size
-      var contentsWidth = contentBox.offsetWidth;
+      var contentsWidth = contentBox.offsetWidth + 10; // padding 5px x 2
       self.set("contentsWidth", contentsWidth);
       var contentsHeight = contentBox.offsetHeight;
       self.set("contentsHeight", contentsHeight );
@@ -240,7 +242,6 @@ HTMLInfoWindow.prototype.open = function(marker) {
         marker.on(event.INFO_CLOSE, self.close.bind(self));
         self.set("marker", marker);
         map.set("active_marker_id", marker.getId());
-        self.on(event.INFO_OPEN);
         self.trigger.call(self, "infoWindowAnchor_changed");
     });
 };

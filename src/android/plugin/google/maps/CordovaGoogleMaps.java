@@ -70,11 +70,10 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   public ViewGroup root;
   public MyPluginLayout mPluginLayout = null;
   private GoogleApiClient googleApiClient = null;
-  private JSONArray _saveArgs = null;
-  private CallbackContext _saveCallbackContext = null;
   public boolean initialized = false;
   public PluginManager pluginManager;
   private String CURRENT_URL;
+  public static final HashMap<String, String> semaphore = new HashMap<String, String>();
 
   @SuppressLint("NewApi") @Override
   public void initialize(final CordovaInterface cordova, final CordovaWebView webView) {
@@ -271,6 +270,12 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
             CordovaGoogleMaps.this.getMap(args, callbackContext);
           } else if ("removeMap".equals(action)) {
             CordovaGoogleMaps.this.removeMap(args, callbackContext);
+          } else if ("backHistory".equals(action)) {
+            CordovaGoogleMaps.this.backHistory(args, callbackContext);
+          } else if ("resumeResizeTimer".equals(action)) {
+            CordovaGoogleMaps.this.resumeResizeTimer(args, callbackContext);
+          } else if ("pauseResizeTimer".equals(action)) {
+            CordovaGoogleMaps.this.pauseResizeTimer(args, callbackContext);
           }
 
         } catch (JSONException e) {
@@ -282,6 +287,33 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
 
   }
 
+  public void resumeResizeTimer(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+    cordova.getActivity().runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        mPluginLayout.pauseResize = false;
+      }
+    });
+  }
+  public void pauseResizeTimer(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+    cordova.getActivity().runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        mPluginLayout.pauseResize = true;
+      }
+    });
+  }
+  public void backHistory(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+    cordova.getActivity().runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        if (!webView.backHistory()) {
+          // If no more history back, exit the app
+          cordova.getActivity().finish();
+        }
+      }
+    });
+  }
 
 
   public void requestPermissions(CordovaPlugin plugin, int requestCode, String[] permissions) {
@@ -299,15 +331,20 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
 
   public void onRequestPermissionResult(int requestCode, String[] permissions,
                                         int[] grantResults) throws JSONException {
-    PluginResult result;
+    boolean didPermissionGrant = true;
     for (int r : grantResults) {
       if (r == PackageManager.PERMISSION_DENIED) {
-        result = new PluginResult(PluginResult.Status.ERROR, "Geolocation permission request was denied.");
-        _saveCallbackContext.sendPluginResult(result);
-        return;
+        didPermissionGrant = false;
+        break;
       }
     }
-    CordovaGoogleMaps.this.getMyLocation(_saveArgs, _saveCallbackContext);
+    synchronized (semaphore) {
+      semaphore.put("result_" + requestCode, didPermissionGrant ? "grant" : "denied");
+    }
+
+    synchronized (CordovaGoogleMaps.semaphore) {
+      semaphore.notify();
+    }
   }
 
   public void pause(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
@@ -376,11 +413,24 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
       return;
     }
 
+    Log.d(TAG, "---> getMyLocation, hasPermission =  " + locationPermission);
     if (!locationPermission) {
-      _saveArgs = args;
-      _saveCallbackContext = callbackContext;
-      requestPermissions(CordovaGoogleMaps.this, 0, new String[]{"android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"});
-      return;
+      //_saveArgs = args;
+      //_saveCallbackContext = callbackContext;
+      requestPermissions(CordovaGoogleMaps.this, callbackContext.hashCode(), new String[]{"android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"});
+      synchronized (semaphore) {
+        try {
+          semaphore.wait();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+      locationPermission = "grant".equals(CordovaGoogleMaps.semaphore.remove("result_" + callbackContext.hashCode()));
+
+      if (!locationPermission) {
+        callbackContext.error("Geolocation permission request was denied.");
+        return;
+      }
     }
 
     if (googleApiClient == null) {
@@ -675,6 +725,7 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
       if (pluginMap != null) {
         pluginMap.remove(null, null);
         pluginMap.onDestroy();
+        pluginMap.objects.clear();
         mPluginLayout.HTMLNodes.remove(mapId);
         pluginMap = null;
       }

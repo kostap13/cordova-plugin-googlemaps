@@ -15,7 +15,10 @@
 @property (nonatomic) UIView *webView;
 @property (nonatomic) MyPluginScrollView *pluginScrollView;
 @property (nonatomic) NSTimer *redrawTimer;
-@property (nonatomic) BOOL *isSuspended;
+@property (nonatomic) BOOL isSuspended;
+@property (nonatomic) BOOL pauseResize;
+@property (nonatomic) BOOL stopFlag;
+@property (nonatomic) NSOperationQueue *executeQueue;
 
 - (id)initWithWebView:(UIView *)webView;
 - (void)resizeTask:(NSTimer *)timer;
